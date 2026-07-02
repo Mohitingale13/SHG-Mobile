@@ -1,0 +1,67 @@
+I want to extend my existing Self Help Group (SHG) management system by adding payment mode selection, QR payment support, and improved statement tracking.
+Currently, the system has three roles:
+•	President
+•	Treasurer
+•	Member
+Members make monthly payments and can also request loans.
+I want to implement the following features.
+________________________________________
+1. Monthly Payment Mode Selection
+When a Member makes their monthly payment, they should be able to choose the payment mode:
+•	Cash
+•	Online
+Behavior
+•	If the member selects Cash, the payment is recorded normally.
+•	If the member selects Online, the system should display the Treasurer’s QR code so the member can scan and complete the payment.
+________________________________________
+2. Treasurer QR Code Upload
+The Treasurer should have the ability to upload their QR code.
+Requirements:
+•	Provide an upload option in the Treasurer dashboard to upload a QR image.
+•	The uploaded QR code should be stored in the system/database.
+•	When a Member selects Online Payment, the Treasurer’s uploaded QR code should automatically appear on the member’s screen.
+________________________________________
+3. Payment Verification by Treasurer
+For online payments, the Treasurer must verify that the payment has actually been completed.
+Workflow:
+1.	Member selects Online Payment and makes payment via QR.
+2.	The payment status becomes "Pending Treasurer Verification".
+3.	The Treasurer checks whether the payment was received.
+4.	Treasurer then:
+o	Approves payment → status becomes "Payment Confirmed"
+o	Rejects payment → status becomes "Payment Not Received"
+________________________________________
+4. Loan Approval Tracking
+The system already has loan approval by Treasurer and President.
+Enhance this by recording timestamps:
+•	When the Treasurer approves the loan
+•	When the President gives final approval
+These timestamps should be stored in the database.
+________________________________________
+5. Statement Generator PDF Improvements
+The statement generator PDF should include detailed information such as:
+Payment Details
+•	Payment amount
+•	Payment date
+•	Payment mode (Cash or Online)
+•	Payment status
+•	Treasurer verification status
+Loan Details
+•	Loan amount
+•	Loan request date
+•	Treasurer approval date
+•	President approval date
+•	Loan status
+This information should be clearly structured in the generated PDF statement.
+________________________________________
+6. Summary of Features to Implement
+1.	Payment mode selection (Cash / Online).
+2.	Treasurer QR code upload and storage.
+3.	Display Treasurer QR to members for online payment.
+4.	Treasurer verification step for online payments.
+5.	Store timestamps for Treasurer and President loan approvals.
+6.	Improve PDF statement generator to include:
+o	Payment mode
+o	Verification status
+o	Approval timestamps.
+Please implement this in a clean, modular way so the system remains scalable and maintainable.

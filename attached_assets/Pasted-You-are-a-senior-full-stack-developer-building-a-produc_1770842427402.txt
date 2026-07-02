@@ -1,0 +1,221 @@
+You are a senior full-stack developer building a production-ready, mobile-first SHG (Self Help Group) Digital Record Platform for rural women in Maharashtra.
+
+IMPORTANT:
+This is NOT a banking or payment processing app.
+It is a record-keeping and governance transparency platform.
+The app does NOT handle real money transfers.
+
+Tech Stack:
+- Frontend: Flutter (mobile-first, responsive)
+- Backend: Firebase (Authentication, Firestore, Storage)
+- OTP + Password authentication
+- Role-based access control
+- English and Marathi localization
+- Clean modular architecture
+- Deployment-ready
+
+====================================================
+CORE GOVERNANCE STRUCTURE
+====================================================
+
+USER ROLES:
+- President
+- Member
+- Admin (system level only)
+
+Remove Treasurer and Secretary roles entirely.
+
+Only President has administrative control inside a group.
+
+====================================================
+AUTHENTICATION SYSTEM (NO ROLE SWITCHING)
+====================================================
+
+1. Each user must register with:
+   - Name
+   - Phone number
+   - Password
+   - Village
+   - Join Date
+   - Planned Exit Date (optional)
+
+2. Use Firebase Authentication:
+   - Phone OTP verification
+   - Store password securely
+   - Proper login/logout system
+   - Session management
+   - No role switching button allowed
+
+3. President account is created only once during group creation.
+
+4. Members cannot become President after login.
+
+5. Proper logout button required.
+
+====================================================
+GROUP CREATION & UNIQUE ID SYSTEM
+====================================================
+
+1. Only President can create a group.
+2. While creating group:
+   - President sets a UNIQUE GROUP ID (string)
+   - This ID is permanent and cannot be changed later.
+3. Members must enter this GROUP ID during registration.
+4. System verifies group ID before joining.
+5. Each group has its own isolated data.
+
+Firestore Structure must support multiple groups.
+
+====================================================
+MEETING MANAGEMENT (President Only)
+====================================================
+
+1. Only President can:
+   - Create meetings
+   - Schedule meeting date
+   - Edit meeting date
+   - Cancel meetings
+
+2. Meeting must include:
+   - Scheduled date
+   - Agenda
+   - Attendance
+   - Notes
+   - Loan discussions
+
+3. Members can only view meetings.
+
+====================================================
+PAYMENT WORKFLOW (NO REAL MONEY HANDLING)
+====================================================
+
+1. Member clicks: "I have paid monthly savings"
+2. Status becomes: Pending Verification
+3. Only President can:
+   - Verify payment
+   - Mark as "Payment Confirmed"
+4. Store:
+   - Member ID
+   - Amount
+   - Date
+   - Status (Pending / Confirmed)
+   - Verified by President ID
+
+5. Members cannot mark payment as confirmed themselves.
+
+====================================================
+MEMBER DETAILS
+====================================================
+
+Each member record must include:
+- Name
+- Phone
+- Village
+- Join Date
+- Planned Exit Date
+- Active Status (Active / Left)
+
+President can edit member status.
+
+====================================================
+GROUP RULES SECTION
+====================================================
+
+Under "More" menu:
+- Add "Group Rules" section
+- Editable only by President
+- Members can only view
+- Stored as structured text in database
+
+====================================================
+LOAN SYSTEM (RECORD ONLY)
+====================================================
+
+1. Member can request loan.
+2. Loan must be approved manually by President.
+3. Loan approval recorded inside meeting.
+4. Store:
+   - Resolution number
+   - Loan amount
+   - Interest
+   - Duration
+   - Remaining balance
+5. Repayments recorded manually.
+
+====================================================
+LANGUAGE SYSTEM
+====================================================
+
+- Language toggle at top: English / Marathi
+- Entire UI must dynamically switch.
+- Use ARB or JSON localization files.
+- Support Marathi speech-to-text input.
+
+====================================================
+VOICE NLP
+====================================================
+
+Enable basic command-based NLP:
+Example Marathi:
+"Mi 200 rupaye bharle"
+System extracts amount and creates pending payment.
+
+Use:
+- Speech-to-text
+- Regex number extraction
+- Keyword detection
+
+No complex AI model required.
+
+====================================================
+DATABASE STRUCTURE
+====================================================
+
+Collections:
+- groups
+- users
+- meetings
+- payments
+- loans
+- loan_repayments
+- rules
+
+Each document must include groupId for isolation.
+
+====================================================
+SECURITY RULES
+====================================================
+
+- Members can access only their group data.
+- President can manage only her group.
+- Admin can view all groups.
+- No cross-group access allowed.
+
+Use Firebase security rules accordingly.
+
+====================================================
+UI REQUIREMENTS
+====================================================
+
+- Large buttons
+- Simple navigation
+- No complex dashboards
+- Clear labels in Marathi
+- Mobile-first layout
+- Visible logout option
+
+====================================================
+OUTPUT REQUIRED
+====================================================
+
+1. Complete folder structure
+2. Firebase schema design
+3. Security rules
+4. Authentication flow
+5. Meeting scheduling logic
+6. Unique group ID validation logic
+7. Voice NLP example
+8. Localization example
+9. Setup and deployment steps
+
+Architecture must be clean, scalable, and realistic for rural SHG usage.

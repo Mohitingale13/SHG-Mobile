@@ -1,0 +1,45 @@
+PS C:\Users\Mohit\Desktop\BE-Project> npm run server:dev
+
+> expo-app@1.0.0 server:dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+No static build found. Proxying frontend to Expo dev server at http://localhost:8081
+Run 'npm run build:web' to generate a static build.
+Server running on port 5000
+API: http://localhost:5000/api
+App: http://localhost:5000
+Internal Server Error: Error: getaddrinfo ENOTFOUND db.gulkbkrgdgrelfrqbpbx.supabase.co
+    at C:\Users\Mohit\Desktop\BE-Project\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\node_modules\src\node-postgres\session.ts:104:19)
+    at async DatabaseStorage.getSession (C:\Users\Mohit\Desktop\BE-Project\server\storage.ts:378:18)
+    at async requireAuth (C:\Users\Mohit\Desktop\BE-Project\server\routes.ts:17:19) {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'db.gulkbkrgdgrelfrqbpbx.supabase.co'
+}
+GET /api/auth/session 500 in 43ms :: {"message":"getaddrinfo ENOTFOUND db.gulkb…
+Error: getaddrinfo ENOTFOUND db.gulkbkrgdgrelfrqbpbx.supabase.co
+    at C:\Users\Mohit\Desktop\BE-Project\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\node_modules\src\node-postgres\session.ts:104:19)
+    at async DatabaseStorage.getUserByPhone (C:\Users\Mohit\Desktop\BE-Project\server\storage.ts:394:18)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\server\routes.ts:131:20) {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'db.gulkbkrgdgrelfrqbpbx.supabase.co'
+}
+POST /api/auth/login 500 in 24ms :: {"error":"Internal server error"}
+Error: getaddrinfo ENOTFOUND db.gulkbkrgdgrelfrqbpbx.supabase.co
+    at C:\Users\Mohit\Desktop\BE-Project\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\node_modules\src\node-postgres\session.ts:104:19)
+    at async DatabaseStorage.getUserByPhone (C:\Users\Mohit\Desktop\BE-Project\server\storage.ts:394:18)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\server\routes.ts:131:20) {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'db.gulkbkrgdgrelfrqbpbx.supabase.co'
+}

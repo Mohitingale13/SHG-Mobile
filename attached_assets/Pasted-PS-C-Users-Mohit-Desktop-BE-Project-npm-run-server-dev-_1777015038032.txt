@@ -1,0 +1,112 @@
+PS C:\Users\Mohit\Desktop\BE-Project> npm run server:dev
+
+> expo-app@1.0.0 server:dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+No static build found. Proxying frontend to Expo dev server at http://localhost:8081
+Run 'npm run build:web' to generate a static build.
+Server running on port 5000
+API: http://localhost:5000/api
+App: http://localhost:5000
+GET /api/auth/session 401 in 1120ms :: {"error":"Invalid or expired session"}
+POST /api/auth/register/president 201 in 1882ms :: {"token":"2b474eca-a19e-49b4…
+GET /api/groups/group1/meetings 200 in 649ms :: []
+GET /api/groups/group1/settings 200 in 539ms :: {"interestRate":2,"maxLoanAmoun…
+GET /api/groups/group1/members 200 in 1354ms :: [{"id":"c62d7cc0-96e0-4237-add4…
+GET /api/groups/group1/rules 200 in 1355ms :: {"rules":""}
+GET /api/groups/group1/loans 200 in 1365ms :: []
+GET /api/groups/group1/repayments 200 in 1364ms :: []
+GET /api/groups/group1/payments 200 in 1370ms :: []
+NLP classify error: GoogleGenerativeAIFetchError: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
+Please retry in 52.597792777s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"52s"}]
+    at handleResponseNotOk (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:434:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async makeRequest (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:403:9)
+    at async generateContent (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:867:22)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\server\routes.ts:612:22) {
+  status: 429,
+  statusText: 'Too Many Requests',
+  errorDetails: [
+    { '@type': 'type.googleapis.com/google.rpc.Help', links: [Array] },
+    {
+      '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+      violations: [Array]
+    },
+    {
+      '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+      retryDelay: '52s'
+    }
+  ]
+}
+POST /api/nlp/classify 500 in 1556ms :: {"error":"NLP service error"}
+Terminate batch job (Y/N)? y
+PS C:\Users\Mohit\Desktop\BE-Project> npm run server:dev
+
+> expo-app@1.0.0 server:dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+No static build found. Proxying frontend to Expo dev server at http://localhost:8081
+Run 'npm run build:web' to generate a static build.
+Server running on port 5000
+API: http://localhost:5000/api
+App: http://localhost:5000
+GET /api/auth/session 200 in 1698ms :: {"user":{"id":"c62d7cc0-96e0-4237-add4-c…
+GET /api/groups/group1/meetings 200 in 750ms :: []
+GET /api/groups/group1/settings 200 in 883ms :: {"interestRate":2,"maxLoanAmoun…
+GET /api/groups/group1/repayments 200 in 1865ms :: []
+GET /api/groups/group1/loans 200 in 1871ms :: []
+GET /api/groups/group1/payments 200 in 1876ms :: []
+GET /api/groups/group1/rules 200 in 1866ms :: {"rules":""}
+GET /api/groups/group1/members 200 in 1870ms :: [{"id":"c62d7cc0-96e0-4237-add4…
+NLP classify error: GoogleGenerativeAIFetchError: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
+Please retry in 45.507581726s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"model":"gemini-2.0-flash","location":"global"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"45s"}]
+    at handleResponseNotOk (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:434:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async makeRequest (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:403:9)
+    at async generateContent (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:867:22)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\server\routes.ts:612:22) {
+  status: 429,
+  statusText: 'Too Many Requests',
+  errorDetails: [
+    { '@type': 'type.googleapis.com/google.rpc.Help', links: [Array] },
+    {
+      '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+      violations: [Array]
+    },
+    {
+      '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+      retryDelay: '45s'
+    }
+  ]
+}
+POST /api/nlp/classify 500 in 2045ms :: {"error":"NLP service error"}
+NLP classify error: GoogleGenerativeAIFetchError: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+Please retry in 27.480044147s. [{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Learn more about Gemini API quotas","url":"https://ai.google.dev/gemini-api/docs/rate-limits"}]},{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_input_token_count","quotaId":"GenerateContentInputTokensPerModelPerMinute-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}},{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"location":"global","model":"gemini-2.0-flash"}}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"27s"}]
+    at handleResponseNotOk (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:434:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async makeRequest (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:403:9)
+    at async generateContent (C:\Users\Mohit\Desktop\BE-Project\node_modules\@google\generative-ai\dist\index.js:867:22)
+    at async <anonymous> (C:\Users\Mohit\Desktop\BE-Project\server\routes.ts:612:22) {
+  status: 429,
+  statusText: 'Too Many Requests',
+  errorDetails: [
+    { '@type': 'type.googleapis.com/google.rpc.Help', links: [Array] },
+    {
+      '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+      violations: [Array]
+    },
+    {
+      '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+      retryDelay: '27s'
+    }
+  ]
+}

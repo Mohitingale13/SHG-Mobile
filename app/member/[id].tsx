@@ -1,0 +1,526 @@
+import { useState } from "react";
+import {
+  View, Text, StyleSheet, ScrollView, Pressable, Platform,
+  Alert, ActivityIndicator,
+} from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useData } from "@/contexts/DataContext";
+import { generateMemberStatement } from "@/lib/pdf-generator";
+import Colors from "@/constants/colors";
+
+export default function MemberDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
+  const { user, group, isPresident } = useAuth();
+  const { t, language } = useLanguage();
+  const { payments, loans, loanRepayments, meetings, groupMembers, updateMemberStatus } = useData();
+  const [generating, setGenerating] = useState(false);
+
+  const member = groupMembers.find((m) => m.id === id);
+
+  if (!member) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <Ionicons name="person-outline" size={48} color={Colors.light.textMuted} />
+        <Text style={styles.emptyText}>{language === "en" ? "Member not found" : "सदस्य सापडला नाही"}</Text>
+      </View>
+    );
+  }
+
+  const canDownload = isPresident || user?.id === member.id;
+
+  const memberPayments = payments.filter((p) => p.memberId === member.id);
+  const confirmedPayments = memberPayments.filter((p) => p.status === "confirmed");
+  const totalSavings = confirmedPayments.reduce((sum, p) => sum + p.amount, 0);
+  const pendingPayments = memberPayments.filter((p) => p.status === "pending").length;
+
+  const memberLoans = loans.filter((l) => l.memberId === member.id);
+  const approvedLoans = memberLoans.filter((l) => l.status === "approved");
+  const totalLoanAmount = approvedLoans.reduce((sum, l) => sum + l.amount, 0);
+  const outstandingLoan = approvedLoans.reduce((sum, l) => sum + l.remainingBalance, 0);
+
+  const completedMeetings = meetings.filter((m) => m.status === "completed");
+  const attendedCount = completedMeetings.filter((m) => m.attendance.includes(member.id)).length;
+  const attendancePercent = completedMeetings.length > 0
+    ? Math.round((attendedCount / completedMeetings.length) * 100) : 0;
+
+  const isActive = member.status === "active";
+
+  const handleDownloadPDF = async () => {
+    if (!group) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setGenerating(true);
+    const president = groupMembers.find((m) => m.role === "president");
+    await generateMemberStatement({
+      member,
+      group,
+      president,
+      payments,
+      loans,
+      loanRepayments,
+      meetings,
+      groupMembers,
+      language,
+    });
+    setGenerating(false);
+  };
+
+  const handleToggleStatus = () => {
+    const newStatus = isActive ? "left" : "active";
+    const msg = newStatus === "left"
+      ? (language === "en" ? "Mark this member as left?" : "या सदस्याला बाहेर पडले म्हणून नोंदवायचे?")
+      : (language === "en" ? "Mark this member as active?" : "या सदस्याला सक्रिय म्हणून नोंदवायचे?");
+
+    Alert.alert(t("confirm"), msg, [
+      { text: t("cancel"), style: "cancel" },
+      {
+        text: t("confirm"),
+        onPress: () => updateMemberStatus(member.id, newStatus),
+      },
+    ]);
+  };
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12,
+          paddingBottom: insets.bottom + 40,
+        },
+      ]}
+    >
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
+        </Pressable>
+        <Text style={styles.headerTitle}>{t("memberDetails")}</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <View style={styles.profileCard}>
+        <View style={[styles.avatar, { backgroundColor: member.role === "president" ? Colors.light.primary : Colors.light.secondary }]}>
+          <Ionicons name={member.role === "president" ? "shield" : "person"} size={32} color="#fff" />
+        </View>
+        <Text style={styles.memberName}>{member.name}</Text>
+        <View style={styles.badgeRow}>
+          <View style={[styles.roleBadge, { backgroundColor: member.role === "president" ? Colors.light.primary + "20" : Colors.light.secondary + "20" }]}>
+            <Text style={[styles.roleBadgeText, { color: member.role === "president" ? Colors.light.primary : Colors.light.secondary }]}>
+              {member.role === "president" ? t("president") : t("member")}
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: isActive ? Colors.light.success + "20" : Colors.light.textMuted + "20" }]}>
+            <Text style={[styles.statusBadgeText, { color: isActive ? Colors.light.success : Colors.light.textMuted }]}>
+              {isActive ? t("active") : t("left")}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.infoCard}>
+        <InfoRow icon="call-outline" label={t("phone")} value={member.phone} />
+        <InfoRow icon="location-outline" label={t("village")} value={member.village} />
+        <InfoRow icon="calendar-outline" label={t("joinDate")} value={formatDisplayDate(member.joinDate)} />
+        {member.exitDate && <InfoRow icon="exit-outline" label={t("exitDate")} value={formatDisplayDate(member.exitDate)} />}
+      </View>
+
+      <View style={styles.statsGrid}>
+        <View style={styles.statCard}>
+          <Ionicons name="wallet" size={20} color={Colors.light.success} />
+          <Text style={styles.statValue}>Rs. {totalSavings}</Text>
+          <Text style={styles.statLabel}>{language === "en" ? "Total Savings" : "एकूण बचत"}</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Ionicons name="cash" size={20} color={Colors.light.primary} />
+          <Text style={styles.statValue}>Rs. {totalLoanAmount}</Text>
+          <Text style={styles.statLabel}>{language === "en" ? "Total Loan" : "एकूण कर्ज"}</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Ionicons name="alert-circle" size={20} color={outstandingLoan > 0 ? Colors.light.danger : Colors.light.success} />
+          <Text style={[styles.statValue, { color: outstandingLoan > 0 ? Colors.light.danger : Colors.light.success }]}>
+            Rs. {outstandingLoan}
+          </Text>
+          <Text style={styles.statLabel}>{language === "en" ? "Outstanding" : "बाकी रक्कम"}</Text>
+        </View>
+      </View>
+
+      <View style={styles.quickStats}>
+        <View style={styles.quickStatItem}>
+          <Text style={styles.quickStatValue}>{memberPayments.length}</Text>
+          <Text style={styles.quickStatLabel}>{t("payments")}</Text>
+        </View>
+        <View style={styles.quickStatDivider} />
+        <View style={styles.quickStatItem}>
+          <Text style={styles.quickStatValue}>{pendingPayments}</Text>
+          <Text style={styles.quickStatLabel}>{t("pending")}</Text>
+        </View>
+        <View style={styles.quickStatDivider} />
+        <View style={styles.quickStatItem}>
+          <Text style={styles.quickStatValue}>{memberLoans.length}</Text>
+          <Text style={styles.quickStatLabel}>{t("loans")}</Text>
+        </View>
+        <View style={styles.quickStatDivider} />
+        <View style={styles.quickStatItem}>
+          <Text style={styles.quickStatValue}>{attendancePercent}%</Text>
+          <Text style={styles.quickStatLabel}>{t("attendance")}</Text>
+        </View>
+      </View>
+
+      <View style={styles.historySection}>
+        <Text style={styles.historySectionTitle}>{language === "en" ? "Payment History" : "भरणा इतिहास"}</Text>
+        {memberPayments.length === 0 ? (
+          <View style={styles.emptySection}>
+            <Text style={styles.emptySectionText}>{t("noPayments")}</Text>
+          </View>
+        ) : (
+          memberPayments
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .slice(0, 10)
+            .map((p) => {
+              const statusColor = p.status === "confirmed" ? Colors.light.success
+                : p.status === "pending" ? Colors.light.pending : Colors.light.danger;
+              return (
+                <View key={p.id} style={styles.historyRow}>
+                  <View style={[styles.historyDot, { backgroundColor: statusColor }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyRowDate}>{formatDisplayDate(p.date)}</Text>
+                    <Text style={[styles.historyRowStatus, { color: statusColor }]}>{t(p.status)}</Text>
+                  </View>
+                  <Text style={styles.historyRowAmount}>Rs. {p.amount}</Text>
+                </View>
+              );
+            })
+        )}
+        {memberPayments.length > 10 && (
+          <Text style={styles.showMoreText}>
+            {language === "en" ? `+ ${memberPayments.length - 10} more` : `+ ${memberPayments.length - 10} अधिक`}
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.historySection}>
+        <Text style={styles.historySectionTitle}>{language === "en" ? "Loan History" : "कर्ज इतिहास"}</Text>
+        {memberLoans.length === 0 ? (
+          <View style={styles.emptySection}>
+            <Text style={styles.emptySectionText}>{t("noLoans")}</Text>
+          </View>
+        ) : (
+          memberLoans
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .map((l) => {
+              const statusColor = l.status === "approved" ? Colors.light.success
+                : l.status === "requested" ? Colors.light.pending : Colors.light.danger;
+              return (
+                <Pressable
+                  key={l.id}
+                  style={styles.historyRow}
+                  onPress={() => router.push({ pathname: "/loan/[id]", params: { id: l.id } })}
+                >
+                  <View style={[styles.historyDot, { backgroundColor: statusColor }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyRowDate}>{formatDisplayDate(l.createdAt)}</Text>
+                    <Text style={[styles.historyRowStatus, { color: statusColor }]}>{t(l.status)}</Text>
+                    {l.status === "approved" && l.remainingBalance > 0 && (
+                      <Text style={styles.historyRowMeta}>{t("remaining")}: Rs. {l.remainingBalance}</Text>
+                    )}
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={styles.historyRowAmount}>Rs. {l.amount}</Text>
+                    <Text style={styles.historyRowMeta}>{l.interest}% / {l.duration} {language === "en" ? "mo" : "म"}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.light.textMuted} />
+                </Pressable>
+              );
+            })
+        )}
+      </View>
+
+      {canDownload && (
+        <Pressable
+          style={({ pressed }) => [styles.downloadBtn, { opacity: pressed ? 0.85 : 1 }]}
+          onPress={handleDownloadPDF}
+          disabled={generating}
+        >
+          {generating ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Ionicons name="download-outline" size={22} color="#fff" />
+          )}
+          <Text style={styles.downloadBtnText}>
+            {generating
+              ? (language === "en" ? "Generating PDF..." : "PDF तयार होत आहे...")
+              : (language === "en" ? "Download Full Statement (PDF)" : "संपूर्ण विवरणपत्र डाउनलोड करा (PDF)")}
+          </Text>
+        </Pressable>
+      )}
+
+      {isPresident && member.role !== "president" && (
+        <Pressable
+          style={[styles.toggleStatusBtn, { borderColor: isActive ? Colors.light.danger + "40" : Colors.light.success + "40" }]}
+          onPress={handleToggleStatus}
+        >
+          <Ionicons
+            name={isActive ? "person-remove-outline" : "person-add-outline"}
+            size={20}
+            color={isActive ? Colors.light.danger : Colors.light.success}
+          />
+          <Text style={[styles.toggleStatusText, { color: isActive ? Colors.light.danger : Colors.light.success }]}>
+            {isActive ? t("markAsLeft") : t("markAsActive")}
+          </Text>
+        </Pressable>
+      )}
+    </ScrollView>
+  );
+}
+
+function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <Ionicons name={icon as any} size={18} color={Colors.light.textSecondary} />
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
+
+function formatDisplayDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.light.background },
+  content: { paddingHorizontal: 20 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  headerTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 18,
+    color: Colors.light.text,
+  },
+  profileCard: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  memberName: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 20,
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  roleBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  roleBadgeText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 12,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 12,
+  },
+  infoCard: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  infoLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    flex: 1,
+  },
+  infoValue: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 13,
+    color: Colors.light.text,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: Colors.light.card,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: "center",
+    gap: 4,
+  },
+  statValue: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 15,
+    color: Colors.light.text,
+  },
+  statLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    textAlign: "center",
+  },
+  quickStats: {
+    flexDirection: "row",
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 20,
+  },
+  quickStatItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  quickStatValue: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 18,
+    color: Colors.light.text,
+  },
+  quickStatLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+  },
+  quickStatDivider: {
+    width: 1,
+    backgroundColor: Colors.light.border,
+  },
+  downloadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: Colors.light.secondary,
+    borderRadius: 14,
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  downloadBtnText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 15,
+    color: "#fff",
+  },
+  toggleStatusBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  toggleStatusText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+  },
+  emptyText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 15,
+    color: Colors.light.textMuted,
+    marginTop: 12,
+  },
+  historySection: {
+    marginBottom: 16,
+  },
+  historySectionTitle: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 15,
+    color: Colors.light.text,
+    marginBottom: 10,
+    paddingLeft: 2,
+  },
+  emptySection: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center" as const,
+  },
+  emptySectionText: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    color: Colors.light.textMuted,
+  },
+  historyRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    backgroundColor: Colors.light.card,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 6,
+    gap: 10,
+  },
+  historyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  historyRowDate: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 13,
+    color: Colors.light.text,
+  },
+  historyRowStatus: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 11,
+  },
+  historyRowAmount: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  historyRowMeta: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 10,
+    color: Colors.light.textMuted,
+  },
+  showMoreText: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 12,
+    color: Colors.light.primary,
+    textAlign: "center" as const,
+    paddingVertical: 8,
+  },
+});

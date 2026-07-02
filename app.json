@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "SHG Records",
+    "slug": "shg-records",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "shgrecords",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF7F4"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.shgrecords"
+    },
+    "android": {
+      "package": "com.shgrecords",
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF7F4",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/images/favicon.png",
+      "meta": {
+        "viewport": {
+          "content": "width=device-width, initial-scale=1, viewport-fit=cover"
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow SHG Records to use the microphone for voice commands.",
+          "speechRecognitionPermission": "Allow SHG Records to use speech recognition for voice commands."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SHG Records to access your photos to set a profile picture."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
