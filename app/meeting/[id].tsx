@@ -16,10 +16,12 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 export default function MeetingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const { isPresident } = useAuth();
+  const { isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
   const { meetings, updateMeeting, cancelMeeting, deleteMeeting, groupMembers } = useData();
   const meeting = meetings.find((m) => m.id === id);
+
+  const canManage = isPresident || isTreasurer;
 
   const [editing, setEditing] = useState(false);
   const [editDate, setEditDate] = useState(meeting?.scheduledDate || "");
@@ -84,7 +86,7 @@ export default function MeetingDetailScreen() {
   };
 
   const toggleAttendance = async (memberId: string) => {
-    if (!isPresident) return;
+    if (!canManage) return;
     Haptics.selectionAsync();
     const current = meeting.attendance || [];
     const updated = current.includes(memberId)
@@ -113,7 +115,7 @@ export default function MeetingDetailScreen() {
             <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
           </Pressable>
           <Text style={styles.headerTitle}>{t("meetingDetails")}</Text>
-          {isPresident && meeting.status === "scheduled" && !editing ? (
+          {canManage && meeting.status === "scheduled" && !editing ? (
             <Pressable onPress={() => setEditing(true)}>
               <Ionicons name="create-outline" size={22} color={Colors.light.primary} />
             </Pressable>
@@ -215,13 +217,13 @@ export default function MeetingDetailScreen() {
             <View style={styles.detailCard}>
               <Text style={styles.fieldLabel}>{t("attendance")}</Text>
               {groupMembers.filter((m) => m.status === "active").map((member) => {
-                const isPresent = meeting.attendance.includes(member.id);
+                const isPresent = meeting.attendance?.includes(member.id);
                 return (
                   <Pressable
                     key={member.id}
                     style={styles.attendanceRow}
                     onPress={() => toggleAttendance(member.id)}
-                    disabled={!isPresident}
+                    disabled={!canManage}
                   >
                     <Ionicons
                       name={isPresent ? "checkbox" : "square-outline"}
@@ -235,7 +237,7 @@ export default function MeetingDetailScreen() {
               })}
             </View>
 
-            {isPresident && (
+            {canManage && (
               <View style={styles.actionRow}>
                 {meeting.status === "scheduled" && (
                   <Pressable

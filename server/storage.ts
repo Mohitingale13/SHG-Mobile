@@ -36,7 +36,7 @@ export interface Group {
   status: "pending" | "active" | "suspended" | "inactive";
   createdBySuperAdmin?: string;
   activatedOn?: Date;
-  createdAt: string;
+  createdAt: Date;
 }
 
 export interface Meeting {

@@ -1,7 +1,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { AuthRequest, requireAuth } from "./routes";
-import { randomBytes } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 
 export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   const authReq = req as AuthRequest;
@@ -22,7 +22,7 @@ export function registerSuperAdminRoutes(app: Express) {
       // Generate unique group code
       const uniqueGroupCode = "SHG-" + randomBytes(4).toString("hex").toUpperCase().slice(0, 8);
       // Generate a random internal group ID since it's required by the schema (uuid usually)
-      const groupId = crypto.randomUUID();
+      const groupId = randomUUID();
 
       const group = await storage.createGroup({
         groupId,
@@ -32,13 +32,13 @@ export function registerSuperAdminRoutes(app: Express) {
         status: "pending",
         presidentId: null,
         createdBySuperAdmin: req.currentUser!.id,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(),
       });
 
       return res.status(201).json(group);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      return res.status(500).json({ error: "Internal server error" });
+      return res.status(500).json({ error: "Internal server error", details: e.message });
     }
   });
 

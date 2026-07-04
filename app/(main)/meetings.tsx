@@ -35,7 +35,7 @@ function MeetingItem({ meeting }: { meeting: Meeting }) {
                 meeting.status === "completed" ? t("completed") : t("meetingCancelled")}
             </Text>
           </View>
-          {meeting.attendance.length > 0 && (
+          {meeting.attendance && meeting.attendance.length > 0 && (
             <View style={styles.attendanceBadge}>
               <Ionicons name="people-outline" size={12} color={Colors.light.textSecondary} />
               <Text style={styles.attendanceText}>{meeting.attendance.length}</Text>
@@ -50,7 +50,7 @@ function MeetingItem({ meeting }: { meeting: Meeting }) {
 
 export default function MeetingsScreen() {
   const insets = useSafeAreaInsets();
-  const { isPresident } = useAuth();
+  const { isPresident, isTreasurer } = useAuth();
   const { t } = useLanguage();
   const { meetings } = useData();
 
@@ -62,7 +62,7 @@ export default function MeetingsScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
         <Text style={styles.title}>{t("meetings")}</Text>
-        {isPresident && (
+        {(isPresident || isTreasurer) && (
           <Pressable
             style={styles.addBtn}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/create-meeting"); }}

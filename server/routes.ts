@@ -41,6 +41,13 @@ export function requirePresident(req: AuthRequest, res: Response, next: NextFunc
   next();
 }
 
+export function requirePresidentOrTreasurer(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.currentUser?.role !== "president" && req.currentUser?.role !== "treasurer") {
+    return res.status(403).json({ error: "President or Treasurer access required" });
+  }
+  next();
+}
+
 export function requireSameGroup(
   groupId: string,
   req: AuthRequest,
@@ -376,7 +383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/groups/:groupId/meetings",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
@@ -400,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete(
     "/api/meetings/:meetingId",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { meetingId } = req.params;
       const meeting = await storage.getMeetingById(meetingId);
@@ -415,7 +422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch(
     "/api/meetings/:meetingId",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { meetingId } = req.params;
       const meeting = await storage.getMeetingById(meetingId);

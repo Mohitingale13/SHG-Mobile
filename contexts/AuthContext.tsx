@@ -31,7 +31,15 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (phone: string, password: string) => Promise<{ success: boolean; error?: string; role?: string }>;
   registerPresident: (data: { name: string; phone: string; password: string; village: string; joinDate?: string; exitDate?: string; uniqueGroupCode: string }) => Promise<{ success: boolean; error?: string }>;
-  registerMember: (data: { name: string; phone: string; password: string; village: string; joinDate?: string; exitDate?: string; invitationCode: string }) => Promise<{ success: boolean; error?: string }>;
+  registerMember: (data: {
+    name: string;
+    phone: string;
+    password: string;
+    village: string;
+    joinDate?: string;
+    exitDate?: string;
+    uniqueGroupCode: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   verifyPassword: (password: string) => Promise<boolean>;
   isPresident: boolean;

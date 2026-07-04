@@ -455,7 +455,7 @@ export default function DashboardScreen() {
             </Text>
           )}
           {(micState === "result" || micState === "error") && transcript ? (
-            <Text style={styles.overlayTranscript}>"{transcript}"</Text>
+            <Text style={styles.overlayTranscript}>&quot;{transcript}&quot;</Text>
           ) : null}
           {(micState === "result" || micState === "error") && overlayReply ? (
             <Text style={[styles.overlayReply, { color: micState === "error" ? Colors.light.danger : Colors.light.success }]}>
