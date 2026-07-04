@@ -65,7 +65,7 @@ export function registerSuperAdminRoutes(app: Express) {
         return res.status(404).json({ error: "Group not found" });
       }
 
-      const updated = await storage.updateGroup(group.id, { status });
+      const updated = await storage.updateGroup(group.groupId, { status });
       return res.json(updated);
     } catch (e) {
       console.error(e);

@@ -37,14 +37,9 @@ export default function RegisterScreen() {
       Alert.alert(t("error"), t("validation.fill_all_fields"));
       return;
     }
-    if (role === "president" && !uniqueGroupCode.trim()) {
+    if (!uniqueGroupCode.trim()) {
       Keyboard.dismiss();
       Alert.alert(t("error"), t("validation.enter_group_code"));
-      return;
-    }
-    if (role === "member" && !invitationCode.trim()) {
-      Keyboard.dismiss();
-      Alert.alert(t("error"), t("validation.enter_invite_code"));
       return;
     }
     if (phone.trim().length !== 10) {

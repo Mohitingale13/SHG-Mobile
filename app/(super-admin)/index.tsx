@@ -11,7 +11,7 @@ import { router } from "expo-router";
 
 export default function SuperAdminDashboard() {
   const { logout } = useAuth();
-  const { language, setLanguage } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [newGroupName, setNewGroupName] = useState("");
@@ -47,9 +47,6 @@ export default function SuperAdminDashboard() {
     try {
       const group = await apiPost<Group>("/api/super-admin/groups", {
         name: newGroupName.trim(),
-        village: village.trim(),
-        taluka: taluka.trim(),
-        district: district.trim(),
         preferredLanguage: newGroupLang,
       });
       setGroups([...groups, group]);

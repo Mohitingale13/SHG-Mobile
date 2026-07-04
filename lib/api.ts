@@ -4,9 +4,11 @@ import { Platform } from "react-native";
 const SESSION_TOKEN_KEY = "shg_session_token";
 
 const BASE_URL: string =
-  Platform.OS !== "web" && process.env.EXPO_PUBLIC_API_URL
-    ? process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, "")
-    : "";
+  Platform.OS === "web"
+    ? (__DEV__ ? "http://localhost:5000" : "")
+    : process.env.EXPO_PUBLIC_API_URL
+      ? process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, "")
+      : "";
 
 export async function getToken(): Promise<string | null> {
   return await getItem(SESSION_TOKEN_KEY);

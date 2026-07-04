@@ -749,6 +749,10 @@ export const translations: Record<string, any> = {
     "groupidtaken": {
       "en": "Group ID already taken",
       "mr": "गट क्रमांक आधीच वापरात आहे"
+    },
+    "invalidorexpiredcode": {
+      "en": "Invalid or expired group code",
+      "mr": "अवैध किंवा कालबाह्य गट कोड"
     }
   },
   "settings": {

@@ -102,7 +102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         preferredLanguage: existingGroup.preferredLanguage,
       });
 
-      await storage.updateGroup(existingGroup.id, {
+      await storage.updateGroup(existingGroup.groupId, {
         presidentId: user.id,
         status: "active",
         activatedOn: new Date(),
