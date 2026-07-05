@@ -20,11 +20,12 @@ A unique feature of this platform is the **AI Voice Assistant**, designed specif
 - **President Registration**: SHG Presidents register and claim their group using the Group Code.
 - **Member Registration**: Members join securely using the unique Group Code.
 - **Role Assignment**: The President can seamlessly promote members to the Treasurer role.
-- **Role-Based Access**: Explicit permission modeling for Super Admin, President, Treasurer, and Member.
+- **Role-Based Access & Governance Hierarchy**: Explicit permission modeling reflecting real-world SHGs. The Super Admin manages platform deployment, the Treasurer handles day-to-day financial operations (verifying payments, recommending loans, recording attendance), and the President has ultimate platform authority with direct override capabilities (reopening payments, direct loan approvals, editing meetings).
 - **Member Management**: Adding, suspending, and monitoring group members.
 - **Meeting Management**: Schedule meetings, track attendance, and record minutes.
 - **Monthly Contribution Management**: Core ledger tracking for expected monthly savings.
 - **Contribution Start Month**: Accurate automated billing synchronized to a member's specific start month.
+- **Dashboard Reminders**: Multi-state dynamic reminders (Pending, Submitted, Rejected) for monthly contributions prominently displayed on the member dashboard.
 - **Automatic Monthly Payment Generation**: Monthly dues are created systematically.
 - **Late Fee Automation**: Programmable late fee structures (fixed or percentage) applied automatically on overdue payments.
 - **Loan Workflow**: End-to-end loan request, review, and approval lifecycle.
