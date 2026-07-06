@@ -35,6 +35,9 @@ async function generateMonthlyPayments() {
   const now = new Date();
   
   for (const group of groups) {
+    const hasConfigured = await storage.hasGroupSettings(group.groupId);
+    if (!hasConfigured) continue;
+    
     const settings = await storage.getGroupSettings(group.groupId);
     const members = await storage.getUsersByGroupId(group.groupId);
     const activeMembers = members.filter(m => m.status === "active");
@@ -73,7 +76,7 @@ async function generateMonthlyPayments() {
             dueDate: dueDate,
             date: new Date(),
             mode: "cash",
-            status: "pending"
+            status: "payment_not_received"
           });
           console.log(`Generated missing payment for ${member.name} (${monthStr})`);
         }

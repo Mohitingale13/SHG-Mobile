@@ -42,9 +42,10 @@ function ModeBadge({ mode }: { mode: "cash" | "online" }) {
 }
 
 function PaymentItem({
-  payment, isPresident, canVerifyCash, canVerifyOnline, canDelete, onVerify, onReject, onReopen, onDelete,
+  payment, user, isPresident, canVerifyCash, canVerifyOnline, canDelete, onVerify, onReject, onReopen, onDelete,
 }: {
   payment: Payment;
+  user: any;
   isPresident: boolean;
   canVerifyCash: boolean;
   canVerifyOnline: boolean;
@@ -64,8 +65,8 @@ function PaymentItem({
 
   const isFinal = payment.status === "confirmed" || payment.status === "rejected" || payment.status === "payment_not_received";
   const canOverride = isPresident && isFinal;
-  const canAct = canVerifyNormally || (isPresident && (!isFinal || (payment.status === "rejected" || payment.status === "payment_not_received")));
-  const isRejected = payment.status === "rejected" || payment.status === "payment_not_received";
+  const canAct = canVerifyNormally || (isPresident && (!isFinal || payment.status === "rejected"));
+  const isRejected = payment.status === "rejected";
 
   return (
     <View style={[styles.paymentCard, payment.mode === "online" && styles.onlineCard]}>
@@ -123,7 +124,7 @@ function PaymentItem({
       )}
 
       {/* President override actions for rejected payments */}
-      {isPresident && isRejected && (
+      {isPresident && isRejected && payment.rejectedBy !== user?.id && !payment.overriddenBy && (
         <View style={styles.overrideActions}>
           <Pressable
             style={[styles.actionBtn, { backgroundColor: Colors.light.primary + "15", marginHorizontal: 0, marginBottom: 0, marginTop: 0 }]}
@@ -203,7 +204,7 @@ function PaymentItem({
 
 export default function PaymentsScreen() {
   const insets = useSafeAreaInsets();
-  const { isPresident, isTreasurer, group } = useAuth();
+  const { user, isPresident, isTreasurer, group } = useAuth();
   const { t, language } = useLanguage();
   const { payments, declarePayment, verifyPayment, reopenPayment, deletePayment, refreshData } = useData();
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
@@ -528,6 +529,7 @@ export default function PaymentsScreen() {
         renderItem={({ item }) => (
           <PaymentItem
             payment={item}
+            user={user}
             isPresident={isPresident}
             canVerifyCash={canVerifyCash}
             canVerifyOnline={canVerifyOnline}

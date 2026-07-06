@@ -598,6 +598,18 @@ export default function DashboardScreen() {
                 <Text style={styles.summaryLabel}>{t("dashboard.loan_repayments")}</Text>
                 <Text style={styles.summaryValue}>Rs. {groupSummary.totalRepayments}</Text>
               </View>
+              {groupSummary.totalOutstanding > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>{t("dashboard.outstanding_loans")}</Text>
+                  <Text style={[styles.summaryValue, { color: Colors.light.danger }]}>Rs. {groupSummary.totalOutstanding}</Text>
+                </View>
+              )}
+              {(groupSummary.totalBankOutstanding || 0) > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>{t("bank.bank_outstanding")}</Text>
+                  <Text style={[styles.summaryValue, { color: Colors.light.danger }]}>Rs. {groupSummary.totalBankOutstanding}</Text>
+                </View>
+              )}
               <View style={styles.summaryDivider} />
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { fontFamily: "Poppins_600SemiBold", color: Colors.light.primary }]}>{t("dashboard.current_balance")}</Text>

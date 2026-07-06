@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
 import {
   View, Text, TextInput, Pressable, StyleSheet, ScrollView,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Modal,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Modal, Switch
 } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +28,8 @@ export default function CreateLoanScreen() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
+
+
 
   const numAmount = parseInt(amount) || 0;
   const numDuration = parseInt(duration) || 0;
@@ -69,6 +72,8 @@ export default function CreateLoanScreen() {
       }
     }
 
+
+
     return valid;
   };
 
@@ -93,7 +98,10 @@ export default function CreateLoanScreen() {
     }
     setShowPasswordModal(false);
     setLoading(true);
-    const error = await requestLoan({ amount: numAmount, duration: numDuration });
+    
+    const payload: any = { amount: numAmount, duration: numDuration };
+
+    const error = await requestLoan(payload);
     setLoading(false);
     if (error) {
       Alert.alert(t("error"), t(error));
@@ -206,44 +214,7 @@ export default function CreateLoanScreen() {
 
           {Number(amount) > 0 && Number(duration) > 0 && (
             <View style={{ marginTop: 16, marginBottom: 16, padding: 16, backgroundColor: Colors.light.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <Ionicons name="calculator" size={18} color={Colors.light.primary} />
-                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 15, color: Colors.light.text }}>
-                  {t("auto.repayment_summary")}
-                </Text>
-              </View>
-              
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-                <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.textSecondary }}>
-                  {t("loanAmount")}
-                </Text>
-                <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 14, color: Colors.light.text }}>
-                  Rs. {Number(amount).toLocaleString('en-IN')}
-                </Text>
-              </View>
-              
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: Colors.light.border }}>
-                <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.textSecondary }}>
-                  {t("interest")} ({groupSettings?.interestRate || 2}% {t("auto.per_month")})
-                </Text>
-                <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 14, color: Colors.light.text }}>
-                  + Rs. {Math.round(Number(amount) * (groupSettings?.interestRate || 2) / 100 * Number(duration)).toLocaleString('en-IN')}
-                </Text>
-              </View>
-              
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 15, color: Colors.light.text }}>
-                  {t("auto.total_amount_to_return")}
-                </Text>
-                <Text style={{ fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.light.primary }}>
-                  Rs. {(Number(amount) + Math.round(Number(amount) * (groupSettings?.interestRate || 2) / 100 * Number(duration))).toLocaleString('en-IN')}
-                </Text>
-              </View>
-            </View>
-          )}
 
-          {Number(amount) > 0 && Number(duration) > 0 && (
-            <View style={{ marginTop: 16, marginBottom: 16, padding: 16, backgroundColor: Colors.light.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <Ionicons name="calculator" size={18} color={Colors.light.primary} />
                 <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 15, color: Colors.light.text }}>
@@ -644,5 +615,36 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
     fontSize: 14,
     color: "#fff",
+  },
+  bankToggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: Colors.light.card,
+    padding: 14,
+    borderRadius: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  bankToggleText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  bankFormCard: {
+    backgroundColor: Colors.light.primary + "08",
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.primary + "20",
+  },
+  pickerContainer: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    overflow: "hidden",
   },
 });

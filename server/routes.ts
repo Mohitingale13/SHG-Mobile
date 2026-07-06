@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import { registerSuperAdminRoutes } from "./super-admin-routes";
 import { registerInvitationRoutes } from "./invitation-routes";
+import { resolveRepaymentAmounts } from "../shared/accounting";
 import Groq from "groq-sdk";
 
 export interface AuthRequest extends Request {
@@ -18,15 +19,18 @@ export async function requireAuth(
 ) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) {
+    console.log("requireAuth 401: Missing or invalid auth header", auth);
     return res.status(401).json({ error: "Unauthorized" });
   }
   const token = auth.slice(7);
   const session = await storage.getSession(token);
   if (!session) {
+    console.log("requireAuth 401: Session not found for token", token);
     return res.status(401).json({ error: "Invalid or expired session" });
   }
   const user = await storage.getUserById(session.userId);
   if (!user) {
+    console.log("requireAuth 401: User not found for session", session.userId);
     return res.status(401).json({ error: "User not found" });
   }
   req.currentUser = user;
@@ -214,6 +218,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  app.patch(
+    "/api/groups/:groupId",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { groupId } = req.params;
+      const data = req.body;
+      const updatedGroup = await storage.updateGroup(groupId, data);
+      if (!updatedGroup) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+      return res.json(updatedGroup);
+    },
+  );
+
   app.get(
     "/api/groups/:groupId/summary",
     requireAuth as any,
@@ -233,7 +253,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const approvedLoans = loans.filter(l => l.status === "approved");
         const totalLoanDisbursed = approvedLoans.reduce((sum, l) => sum + l.amount, 0);
         const totalOutstanding = approvedLoans.reduce((sum, l) => sum + l.remainingBalance, 0);
-        const totalRepayments = repayments.reduce((sum, r) => sum + r.amount, 0);
+        const totalBankOutstanding = approvedLoans.reduce((sum, l) => sum + (l.hasBankLoan ? (l.bankRemainingBalance || 0) : 0), 0);
+        const totalRepayments = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
+        const totalBankRepayments = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).bankAmount, 0);
         
         const currentBalance = totalSavings + totalPenalties + totalRepayments - totalLoanDisbursed;
         
@@ -247,7 +269,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalSavings,
           totalLoanDisbursed,
           totalOutstanding,
+          totalBankOutstanding,
           totalRepayments,
+          totalBankRepayments,
           totalPenalties,
           currentBalance,
           activeMembers,
@@ -648,6 +672,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // ─── AFFILIATED BANKS ─────────────────────────────────────────────────────
+
+  app.get(
+    "/api/groups/:groupId/banks",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      const { groupId } = req.params;
+      if (req.currentUser!.groupId !== groupId)
+        return res.status(403).json({ error: "Access denied" });
+      const banks = await storage.getBanksByGroupId(groupId);
+      return res.json(banks);
+    },
+  );
+
+  app.post(
+    "/api/groups/:groupId/banks",
+    requireAuth as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      const { groupId } = req.params;
+      if (req.currentUser!.groupId !== groupId)
+        return res.status(403).json({ error: "Access denied" });
+      const { name, branch, ifscCode, contactPerson, contactNumber, notes } = req.body;
+      if (!name || !name.trim())
+        return res.status(400).json({ error: "Bank name is required" });
+      const bank = await storage.createBank({
+        groupId,
+        name: name.trim(),
+        branch: branch?.trim() || undefined,
+        ifscCode: ifscCode?.trim() || undefined,
+        contactPerson: contactPerson?.trim() || undefined,
+        contactNumber: contactNumber?.trim() || undefined,
+        notes: notes?.trim() || undefined,
+        isActive: true,
+        createdBy: req.currentUser!.id,
+        createdAt: new Date().toISOString(),
+      });
+      return res.status(201).json(bank);
+    },
+  );
+
+  app.patch(
+    "/api/banks/:bankId",
+    requireAuth as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      const { bankId } = req.params;
+      const bank = await storage.getBankById(bankId);
+      if (!bank || bank.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Bank not found" });
+      const { name, branch, ifscCode, contactPerson, contactNumber, notes, isActive } = req.body;
+      const updates: any = {};
+      if (name !== undefined) updates.name = name.trim();
+      if (branch !== undefined) updates.branch = branch.trim() || null;
+      if (ifscCode !== undefined) updates.ifscCode = ifscCode.trim() || null;
+      if (contactPerson !== undefined) updates.contactPerson = contactPerson.trim() || null;
+      if (contactNumber !== undefined) updates.contactNumber = contactNumber.trim() || null;
+      if (notes !== undefined) updates.notes = notes.trim() || null;
+      if (isActive !== undefined) updates.isActive = isActive;
+      const updated = await storage.updateBank(bankId, updates);
+      return res.json(updated);
+    },
+  );
+
+  app.delete(
+    "/api/banks/:bankId",
+    requireAuth as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      const { bankId } = req.params;
+      const bank = await storage.getBankById(bankId);
+      if (!bank || bank.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Bank not found" });
+      // Soft delete: set isActive = false
+      await storage.updateBank(bankId, { isActive: false });
+      return res.json({ ok: true });
+    },
+  );
+
   // ─── LOANS ──────────────────────────────────────────────────────────────────
 
   app.get(
@@ -680,12 +783,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const settings = await storage.getGroupSettings(groupId);
 
-      // Validate amount
+      // Validate SHG amount
       if (amount <= 0) return res.status(400).json({ error: "invalidAmount" });
       if (amount > settings.maxLoanAmount)
         return res.status(400).json({ error: "exceedsMaxLoan" });
 
-      // Validate duration
+      // Validate SHG duration
       const sorted = [...settings.durationRules].sort(
         (a, b) => a.maxAmount - b.maxAmount,
       );
@@ -695,6 +798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "durationTooShort" });
       if (duration > rule.maxDuration)
         return res.status(400).json({ error: "durationTooLong" });
+
 
       const user = req.currentUser!;
       const group = await storage.getGroupByGroupId(groupId);
@@ -708,6 +812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalInterest = Math.round(principal * (rate / 100) * dur);
       const totalRepayable = principal + totalInterest;
 
+
       const loan = await storage.createLoan({
         groupId,
         memberId: user.id,
@@ -719,7 +824,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         remainingBalance: totalRepayable,
         status: initialStatus,
         createdAt: new Date(),
-      });
+        hasBankLoan: false,
+        bankId: undefined,
+        bankName: undefined,
+        bankLoanAmount: undefined,
+        bankInterestRate: undefined,
+        bankDuration: undefined,
+        bankRemainingBalance: undefined,
+        bankLoanRemarks: undefined,
+      } as any);
       return res.status(201).json(loan);
     },
   );
@@ -739,11 +852,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res
           .status(400)
           .json({ error: "Loan is not awaiting treasurer approval" });
-      const updated = await storage.updateLoan(loanId, {
+      const updateData: any = {
         status: "pending_president",
         treasurerActionBy: user.id,
         treasurerActionAt: new Date(),
-      });
+      };
+      
+      if (req.body.hasBankLoan) {
+        updateData.hasBankLoan = true;
+        updateData.bankName = req.body.bankName;
+        updateData.bankLoanAmount = Number(req.body.bankAmount);
+        updateData.bankInterestRate = Number(req.body.bankInterestRate) || 0;
+        updateData.bankDuration = Number(req.body.bankDuration);
+        updateData.bankLoanRemarks = req.body.bankRemarks;
+        
+        const bRate = updateData.bankInterestRate;
+        const bPrincipal = updateData.bankLoanAmount;
+        const bDur = updateData.bankDuration;
+        const bInterest = Math.round(bPrincipal * (bRate / 100) * bDur);
+        updateData.bankRemainingBalance = bPrincipal + bInterest;
+      } else if (req.body.hasBankLoan === false) {
+        updateData.hasBankLoan = false;
+        updateData.bankName = null;
+        updateData.bankLoanAmount = null;
+        updateData.bankInterestRate = null;
+        updateData.bankDuration = null;
+        updateData.bankLoanRemarks = null;
+        updateData.bankRemainingBalance = null;
+      }
+
+      const updated = await storage.updateLoan(loanId, updateData);
       return res.json(updated);
     },
   );
@@ -809,6 +947,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.presidentOverride = true;
         updateData.overrideAt = new Date();
         updateData.overrideReason = "Approved directly by President";
+      }
+
+      if (req.body.hasBankLoan) {
+        updateData.hasBankLoan = true;
+        updateData.bankName = req.body.bankName;
+        updateData.bankLoanAmount = Number(req.body.bankAmount);
+        updateData.bankInterestRate = Number(req.body.bankInterestRate) || 0;
+        updateData.bankDuration = Number(req.body.bankDuration);
+        updateData.bankLoanRemarks = req.body.bankRemarks;
+        
+        const bRate = updateData.bankInterestRate;
+        const bPrincipal = updateData.bankLoanAmount;
+        const bDur = updateData.bankDuration;
+        const bInterest = Math.round(bPrincipal * (bRate / 100) * bDur);
+        updateData.bankRemainingBalance = bPrincipal + bInterest;
+      } else if (req.body.hasBankLoan === false) {
+        updateData.hasBankLoan = false;
+        updateData.bankName = null;
+        updateData.bankLoanAmount = null;
+        updateData.bankInterestRate = null;
+        updateData.bankDuration = null;
+        updateData.bankLoanRemarks = null;
+        updateData.bankRemainingBalance = null;
       }
 
       const updated = await storage.updateLoan(loanId, updateData);
@@ -890,23 +1051,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requirePresident as any,
     async (req: AuthRequest, res) => {
       const { loanId } = req.params;
-      const { amount } = req.body;
-      if (!amount || amount <= 0)
-        return res.status(400).json({ error: "Valid amount required" });
+      const { amount, shgAmount, bankAmount, remarks } = req.body;
       const loan = await storage.getLoanById(loanId);
       if (!loan || loan.groupId !== req.currentUser!.groupId) {
         return res.status(404).json({ error: "Loan not found" });
       }
+
+      // Calculate split amounts
+      const shg = Number(shgAmount) || 0;
+      const bank = Number(bankAmount) || 0;
+      const total = Number(amount) || (shg + bank);
+
+      if (total <= 0)
+        return res.status(400).json({ error: "Valid amount required" });
+      if (shg < 0 || bank < 0)
+        return res.status(400).json({ error: "Amounts cannot be negative" });
+      if (!loan.hasBankLoan && bank > 0)
+        return res.status(400).json({ error: "This loan does not have a bank component" });
+
       const repayment = await storage.createRepayment({
         loanId,
-        amount: Number(amount),
+        amount: shg + bank,
+        shgAmount: shg,
+        bankAmount: bank,
         date: new Date(),
         recordedBy: req.currentUser!.id,
+        remarks: remarks?.trim() || undefined,
       });
-      const allRepayments = await storage.getRepaymentsByLoanId(loanId);
-      const totalRepaid = allRepayments.reduce((sum, r) => sum + r.amount, 0);
-      const newBalance = Math.max(0, loan.amount - totalRepaid);
-      await storage.updateLoan(loanId, { remainingBalance: newBalance });
+
+      // Update SHG remaining balance (bank balance is tracked separately)
+      if (shg > 0) {
+        const allRepayments = await storage.getRepaymentsByLoanId(loanId);
+        const totalShgRepaid = allRepayments.reduce((s, r) => s + resolveRepaymentAmounts(r).shgAmount, 0);
+        const shgTotal = loan.amount + Math.round(loan.amount * (loan.interest / 100) * loan.duration);
+        const newBalance = Math.max(0, shgTotal - totalShgRepaid);
+        await storage.updateLoan(loanId, { remainingBalance: newBalance });
+      }
+
+      // Update bank remaining balance independently
+      if (bank > 0 && loan.hasBankLoan) {
+        const allRepayments = await storage.getRepaymentsByLoanId(loanId);
+        const totalBankRepaid = allRepayments.reduce((s, r) => s + resolveRepaymentAmounts(r).bankAmount, 0);
+        const bankTotal = (loan.bankLoanAmount || 0) + Math.round((loan.bankLoanAmount || 0) * ((loan.bankInterestRate || 0) / 100) * (loan.bankDuration || 0));
+        const newBankBalance = Math.max(0, bankTotal - totalBankRepaid);
+        await storage.updateLoan(loanId, { bankRemainingBalance: newBankBalance });
+      }
+
       return res.status(201).json(repayment);
     },
   );
@@ -917,12 +1107,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requirePresident as any,
     async (req: AuthRequest, res) => {
       const { repaymentId } = req.params;
-      const repayments = await storage
-        .getRepaymentsByLoanId(repaymentId)
-        .catch(() => []);
-      // repaymentId is directly the repayment's own id, not a loanId
+      const repayment = await storage.getRepaymentById(repaymentId);
+      if (!repayment) {
+        return res.status(404).json({ error: "Repayment not found" });
+      }
+      
+      const loan = await storage.getLoanById(repayment.loanId);
+      if (!loan || loan.groupId !== req.currentUser!.groupId) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+
       await storage.deleteRepayment(repaymentId);
-      return res.json({ ok: true });
+      
+      // Recalculate balances
+      const allRepayments = await storage.getRepaymentsByLoanId(loan.id);
+      
+      // SHG
+      const totalShgRepaid = allRepayments.reduce((s, r) => s + resolveRepaymentAmounts(r).shgAmount, 0);
+      const shgTotal = loan.amount + Math.round(loan.amount * (loan.interest / 100) * loan.duration);
+      const newBalance = Math.max(0, shgTotal - totalShgRepaid);
+      
+      // Bank
+      const totalBankRepaid = allRepayments.reduce((s, r) => s + resolveRepaymentAmounts(r).bankAmount, 0);
+      const bankTotal = (loan.bankLoanAmount || 0) + Math.round((loan.bankLoanAmount || 0) * ((loan.bankInterestRate || 0) / 100) * (loan.bankDuration || 0));
+      const newBankBalance = loan.hasBankLoan ? Math.max(0, bankTotal - totalBankRepaid) : null;
+      
+      const updatedLoan = await storage.updateLoan(loan.id, {
+        remainingBalance: newBalance,
+        ...(loan.hasBankLoan ? { bankRemainingBalance: newBankBalance } : {})
+      });
+
+      return res.json({ ok: true, loan: updatedLoan });
     },
   );
 
