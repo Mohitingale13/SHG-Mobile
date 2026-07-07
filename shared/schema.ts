@@ -118,6 +118,32 @@ export const payments = pgTable("payments", {
   paymentGroupMemberMonthIdx: index("payment_group_member_month_idx").on(t.groupId, t.memberId, t.month),
 }));
 
+// ─── AFFILIATED BANKS ────────────────────────────────────────────────────────
+// Each SHG can register affiliated banks for bank-assisted loans.
+// These are managed by the President in SHG Settings.
+
+export const affiliatedBanks = pgTable("affiliated_banks", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  name: text("name").notNull(),
+  branch: text("branch"),
+  ifscCode: varchar("ifsc_code", { length: 20 }),
+  contactPerson: text("contact_person"),
+  contactNumber: varchar("contact_number", { length: 20 }),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by", { length: 36 }).notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (t) => ({
+  bankGroupIdx: index("bank_group_idx").on(t.groupId),
+}));
+
+// ─── LOANS ───────────────────────────────────────────────────────────────────
+// Bank-assisted loan fields are all optional/nullable.
+// If hasBankLoan = false (default), existing workflow is 100% unchanged.
+
 export const loans = pgTable("loans", {
   id: varchar("id", { length: 36 })
     .primaryKey()
@@ -143,18 +169,37 @@ export const loans = pgTable("loans", {
   presidentOverride: boolean("president_override").default(false),
   overrideReason: text("override_reason"),
   overrideAt: timestamp("override_at"),
+
+  // ── Bank-Assisted Loan fields (all optional — backward compatible) ──────────
+  hasBankLoan: boolean("has_bank_loan").notNull().default(false),
+  bankId: varchar("bank_id", { length: 36 }),          // references affiliated_banks.id
+  bankName: text("bank_name"),                          // denormalized for display/reports
+  bankLoanAmount: integer("bank_loan_amount"),          // bank principal
+  bankInterestRate: real("bank_interest_rate"),         // % per month
+  bankDuration: integer("bank_duration"),               // months
+  bankRemainingBalance: integer("bank_remaining_balance"), // tracks separately
+  bankLoanStartDate: timestamp("bank_loan_start_date"),
+  bankLoanRemarks: text("bank_loan_remarks"),
 }, (t) => ({
   loanMemberIdx: index("loan_member_idx").on(t.memberId),
 }));
+
+// ─── LOAN REPAYMENTS ─────────────────────────────────────────────────────────
+// Extended with shgAmount and bankAmount for split repayments.
+// amount = shgAmount + bankAmount (kept for backward compat).
+// For old repayments: shgAmount = amount, bankAmount = 0.
 
 export const loanRepayments = pgTable("loan_repayments", {
   id: varchar("id", { length: 36 })
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   loanId: varchar("loan_id", { length: 36 }).notNull(),
-  amount: integer("amount").notNull(),
+  amount: integer("amount").notNull(),          // total = shgAmount + bankAmount
+  shgAmount: integer("shg_amount").notNull().default(0),   // SHG portion
+  bankAmount: integer("bank_amount").notNull().default(0),  // Bank pass-through
   date: timestamp("date").notNull().default(sql`now()`),
   recordedBy: varchar("recorded_by", { length: 36 }).notNull(),
+  remarks: text("remarks"),
 });
 
 export const groupSettings = pgTable("group_settings", {
@@ -174,3 +219,4 @@ export const cronLocks = pgTable("cron_locks", {
 
 export type InvitationCode = typeof invitationCodes.$inferSelect;
 export type InvitationCodeUsage = typeof invitationCodeUsage.$inferSelect;
+export type AffiliatedBank = typeof affiliatedBanks.$inferSelect;

@@ -30,16 +30,16 @@ export default function ReportsScreen() {
   const { group, president, user, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
   const { payments, loans, loanRepayments, groupMembers } = useData();
-  
+
   const [activeReport, setActiveReport] = useState<string | null>(null);
-  
+
   // Generic Filters
   const [timeRange, setTimeRange] = useState<"all" | "month" | "year" | "custom">("month");
   const [filterMonth, setFilterMonth] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
   const [filterYear, setFilterYear] = useState(String(new Date().getFullYear()));
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  
+
   // Specific Filters
   const [paymentMethod, setPaymentMethod] = useState<"all" | "cash" | "online">("all");
   const [loanStatus, setLoanStatus] = useState<string>("all");
@@ -49,7 +49,7 @@ export default function ReportsScreen() {
 
   const getAppliedFiltersText = (reportType: string) => {
     const filters = [];
-    
+
     // Time Range Text
     if (reportType !== "members") {
       let timeText = t("reports.all_time") || "All Time";
@@ -63,19 +63,19 @@ export default function ReportsScreen() {
       const pMethod = paymentMethod === "all" ? t("all") : (paymentMethod === "cash" ? t("cash") : t("auto.online"));
       filters.push({ label: t("reports.payment_method") || "Payment Method", value: pMethod });
     }
-    
+
     if (reportType === "loans") {
       let lStatus = t("all");
       if (loanStatus !== "all") lStatus = t(`reports.${loanStatus}`) || loanStatus;
       filters.push({ label: t("reports.loan_status") || "Loan Status", value: lStatus });
     }
-    
+
     if (reportType === "members") {
       let mStatus = t("all");
       if (memberStatus !== "all") mStatus = t(`reports.${memberStatus}`) || memberStatus;
       filters.push({ label: t("reports.member_status") || "Member Status", value: mStatus });
     }
-    
+
     return filters;
   };
 
@@ -174,20 +174,20 @@ export default function ReportsScreen() {
 
       {timeRange === "custom" && (
         <View style={styles.dateInputRow}>
-          <TextInput 
-            style={styles.dateInput} 
-            placeholder="YYYY-MM-DD" 
-            value={startDate} 
-            onChangeText={setStartDate} 
-            maxLength={10} 
+          <TextInput
+            style={styles.dateInput}
+            placeholder="YYYY-MM-DD"
+            value={startDate}
+            onChangeText={setStartDate}
+            maxLength={10}
           />
           <Text style={{ color: Colors.light.textSecondary }}>to</Text>
-          <TextInput 
-            style={styles.dateInput} 
-            placeholder="YYYY-MM-DD" 
-            value={endDate} 
-            onChangeText={setEndDate} 
-            maxLength={10} 
+          <TextInput
+            style={styles.dateInput}
+            placeholder="YYYY-MM-DD"
+            value={endDate}
+            onChangeText={setEndDate}
+            maxLength={10}
           />
         </View>
       )}
@@ -219,8 +219,8 @@ export default function ReportsScreen() {
         </Text>
 
         {/* Savings Report */}
-        <Pressable 
-          style={[styles.reportCard, activeReport === "savings" && styles.reportCardActive]} 
+        <Pressable
+          style={[styles.reportCard, activeReport === "savings" && styles.reportCardActive]}
           onPress={() => setActiveReport(activeReport === "savings" ? null : "savings")}
         >
           <View style={styles.cardHeader}>
@@ -233,11 +233,11 @@ export default function ReportsScreen() {
             </View>
             <Ionicons name={activeReport === "savings" ? "chevron-up" : "chevron-down"} size={20} color={Colors.light.textSecondary} />
           </View>
-          
+
           {activeReport === "savings" && (
             <View style={styles.cardBody}>
               {renderTimeFilters()}
-              
+
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>{t("reports.payment_method") || "Payment Method"}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
@@ -255,8 +255,8 @@ export default function ReportsScreen() {
         </Pressable>
 
         {/* Loans Report */}
-        <Pressable 
-          style={[styles.reportCard, activeReport === "loans" && styles.reportCardActive]} 
+        <Pressable
+          style={[styles.reportCard, activeReport === "loans" && styles.reportCardActive]}
           onPress={() => setActiveReport(activeReport === "loans" ? null : "loans")}
         >
           <View style={styles.cardHeader}>
@@ -269,11 +269,11 @@ export default function ReportsScreen() {
             </View>
             <Ionicons name={activeReport === "loans" ? "chevron-up" : "chevron-down"} size={20} color={Colors.light.textSecondary} />
           </View>
-          
+
           {activeReport === "loans" && (
             <View style={styles.cardBody}>
               {renderTimeFilters()}
-              
+
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>{t("reports.loan_status") || "Loan Status"}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
@@ -295,8 +295,8 @@ export default function ReportsScreen() {
         </Pressable>
 
         {/* Financial Summary */}
-        <Pressable 
-          style={[styles.reportCard, activeReport === "summary" && styles.reportCardActive]} 
+        <Pressable
+          style={[styles.reportCard, activeReport === "summary" && styles.reportCardActive]}
           onPress={() => setActiveReport(activeReport === "summary" ? null : "summary")}
         >
           <View style={styles.cardHeader}>
@@ -305,15 +305,15 @@ export default function ReportsScreen() {
             </View>
             <View style={styles.reportInfo}>
               <Text style={styles.reportTitle}>{t("reports.financial_summary") || "Financial Summary"}</Text>
-              <Text style={styles.reportDesc}>{t("auto.view_summary_of_all_transactions") || "Overview of total finances"}</Text>
+              <Text style={styles.reportDesc}>{t("Summary of all transactions") || "Overview of total finances"}</Text>
             </View>
             <Ionicons name={activeReport === "summary" ? "chevron-up" : "chevron-down"} size={20} color={Colors.light.textSecondary} />
           </View>
-          
+
           {activeReport === "summary" && (
             <View style={styles.cardBody}>
               {renderTimeFilters()}
-              
+
               <Pressable style={[styles.downloadBtn, { backgroundColor: "#8b5cf6" }]} onPress={() => handleGenerate("summary")} disabled={generating !== null}>
                 {generating === "summary" ? <ActivityIndicator color="#fff" size="small" /> : <><Ionicons name="download-outline" size={18} color="#fff" /><Text style={styles.downloadText}>{t("common.download")}</Text></>}
               </Pressable>
@@ -322,8 +322,8 @@ export default function ReportsScreen() {
         </Pressable>
 
         {/* Member Register */}
-        <Pressable 
-          style={[styles.reportCard, activeReport === "members" && styles.reportCardActive]} 
+        <Pressable
+          style={[styles.reportCard, activeReport === "members" && styles.reportCardActive]}
           onPress={() => setActiveReport(activeReport === "members" ? null : "members")}
         >
           <View style={styles.cardHeader}>
@@ -332,14 +332,14 @@ export default function ReportsScreen() {
             </View>
             <View style={styles.reportInfo}>
               <Text style={styles.reportTitle}>{t("reports.member_register") || "Member Register"}</Text>
-              <Text style={styles.reportDesc}>{t("auto.view_summary_of_all_members") || "Detailed member status list"}</Text>
+              <Text style={styles.reportDesc}>{t("Summary of all members") || "Detailed member status list"}</Text>
             </View>
             <Ionicons name={activeReport === "members" ? "chevron-up" : "chevron-down"} size={20} color={Colors.light.textSecondary} />
           </View>
-          
+
           {activeReport === "members" && (
             <View style={styles.cardBody}>
-              
+
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>{t("reports.member_status") || "Member Status"}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   title: { fontFamily: "Poppins_700Bold", fontSize: 22, color: Colors.light.text },
   subtitle: { fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.textSecondary, marginBottom: 30 },
-  
+
   reportCard: { backgroundColor: Colors.light.card, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.light.border, overflow: "hidden" },
   reportCardActive: { borderColor: Colors.light.primary },
   cardHeader: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
@@ -380,9 +380,9 @@ const styles = StyleSheet.create({
   reportInfo: { flex: 1 },
   reportTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 16, color: Colors.light.text },
   reportDesc: { fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.light.textSecondary },
-  
+
   cardBody: { padding: 16, borderTopWidth: 1, borderTopColor: Colors.light.border, gap: 20 },
-  
+
   filterGroup: { gap: 8 },
   filterLabel: { fontFamily: "Poppins_500Medium", fontSize: 12, color: Colors.light.textSecondary, textTransform: "uppercase" },
   chipScroll: { gap: 8, paddingBottom: 4 },
@@ -390,14 +390,14 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: Colors.light.primary + "15", borderColor: Colors.light.primary },
   chipText: { fontFamily: "Poppins_500Medium", fontSize: 13, color: "#64748b" },
   chipTextSelected: { color: Colors.light.primary, fontFamily: "Poppins_600SemiBold" },
-  
+
   subFilterRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   dateInputRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 },
   dateInput: { flex: 1, height: 44, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 8, paddingHorizontal: 12, fontFamily: "Poppins_400Regular", backgroundColor: "#fff" },
 
   downloadBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: Colors.light.primary, paddingVertical: 14, borderRadius: 12, marginTop: 8 },
   downloadText: { fontFamily: "Poppins_600SemiBold", fontSize: 15, color: "#fff" },
-  
+
   accessDenied: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.light.background, padding: 20 },
   accessDeniedText: { fontFamily: "Poppins_500Medium", fontSize: 16, color: Colors.light.textSecondary, marginTop: 16, textAlign: "center" },
 });

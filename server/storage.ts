@@ -112,14 +112,41 @@ export interface Loan {
   presidentOverride?: boolean;
   overrideReason?: string;
   overrideAt?: string;
+  // Bank-Assisted Loan fields (optional)
+  hasBankLoan?: boolean;
+  bankId?: string;
+  bankName?: string;
+  bankLoanAmount?: number;
+  bankInterestRate?: number;
+  bankDuration?: number;
+  bankRemainingBalance?: number;
+  bankLoanStartDate?: string;
+  bankLoanRemarks?: string;
 }
 
 export interface LoanRepayment {
   id: string;
   loanId: string;
-  amount: number;
+  amount: number;      // total = shgAmount + bankAmount
+  shgAmount: number;   // SHG portion (never mixed as bank income)
+  bankAmount: number;  // Bank pass-through portion
   date: string;
   recordedBy: string;
+  remarks?: string;
+}
+
+export interface AffiliatedBank {
+  id: string;
+  groupId: string;
+  name: string;
+  branch?: string;
+  ifscCode?: string;
+  contactPerson?: string;
+  contactNumber?: string;
+  notes?: string;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface DurationRule {
@@ -198,16 +225,25 @@ export interface IStorage {
 
   getRepaymentsByLoanId(loanId: string): Promise<LoanRepayment[]>;
   getRepaymentsByGroupId(groupId: string): Promise<LoanRepayment[]>;
+  getRepaymentById(id: string): Promise<LoanRepayment | undefined>;
   createRepayment(repayment: Omit<LoanRepayment, "id">): Promise<LoanRepayment>;
   deleteRepayment(id: string): Promise<void>;
 
   getGroupSettings(groupId: string): Promise<GroupSettings>;
+  hasGroupSettings(groupId: string): Promise<boolean>;
   updateGroupSettings(groupId: string, settings: GroupSettings): Promise<void>;
 
   getGroupRules(groupId: string): Promise<string>;
   updateGroupRules(groupId: string, rules: string): Promise<void>;
 
   acquireCronLock(jobName: string): Promise<boolean>;
+
+  // Affiliated Banks
+  getBanksByGroupId(groupId: string): Promise<AffiliatedBank[]>;
+  getBankById(id: string): Promise<AffiliatedBank | undefined>;
+  createBank(bank: Omit<AffiliatedBank, "id">): Promise<AffiliatedBank>;
+  updateBank(id: string, data: Partial<AffiliatedBank>): Promise<AffiliatedBank | undefined>;
+  deleteBank(id: string): Promise<void>;
 
   // Super Admin & Invitations
   getGroupByUniqueGroupCode(code: string): Promise<Group | undefined>;
@@ -227,6 +263,7 @@ export class MemStorage implements IStorage {
   private repayments = new Map<string, LoanRepayment>();
   private groupSettings = new Map<string, GroupSettings>();
   private groupRules = new Map<string, string>();
+  private banks = new Map<string, AffiliatedBank>();
 
   async createSession(userId: string): Promise<Session> {
     const token = randomUUID();
@@ -397,7 +434,13 @@ export class MemStorage implements IStorage {
   async getRepaymentsByGroupId(groupId: string): Promise<LoanRepayment[]> {
     const groupLoans = await this.getLoansByGroupId(groupId);
     const loanIds = new Set(groupLoans.map((l) => l.id));
-    return Array.from(this.repayments.values()).filter((r) => loanIds.has(r.loanId));
+    return Array.from(this.repayments.values()).filter(
+      (r) => loanIds.has(r.loanId)
+    );
+  }
+
+  async getRepaymentById(id: string): Promise<LoanRepayment | undefined> {
+    return this.repayments.get(id);
   }
 
   async createRepayment(data: Omit<LoanRepayment, "id">): Promise<LoanRepayment> {
@@ -409,6 +452,10 @@ export class MemStorage implements IStorage {
 
   async deleteRepayment(id: string): Promise<void> {
     this.repayments.delete(id);
+  }
+
+  async hasGroupSettings(groupId: string): Promise<boolean> {
+    return this.settings.has(groupId);
   }
 
   async getGroupSettings(groupId: string): Promise<GroupSettings> {
@@ -430,6 +477,29 @@ export class MemStorage implements IStorage {
   async acquireCronLock(jobName: string): Promise<boolean> {
     // In-memory doesn't have multiple instances competing
     return true;
+  }
+
+  async getBanksByGroupId(groupId: string): Promise<AffiliatedBank[]> {
+    return Array.from(this.banks.values()).filter((b) => b.groupId === groupId);
+  }
+  async getBankById(id: string): Promise<AffiliatedBank | undefined> {
+    return this.banks.get(id);
+  }
+  async createBank(data: Omit<AffiliatedBank, "id">): Promise<AffiliatedBank> {
+    const id = randomUUID();
+    const bank: AffiliatedBank = { ...data, id };
+    this.banks.set(id, bank);
+    return bank;
+  }
+  async updateBank(id: string, data: Partial<AffiliatedBank>): Promise<AffiliatedBank | undefined> {
+    const bank = this.banks.get(id);
+    if (!bank) return undefined;
+    const updated = { ...bank, ...data };
+    this.banks.set(id, updated);
+    return updated;
+  }
+  async deleteBank(id: string): Promise<void> {
+    this.banks.delete(id);
   }
 }
 
@@ -618,6 +688,11 @@ export class DatabaseStorage implements IStorage {
     return rows as LoanRepayment[];
   }
 
+  async getRepaymentById(id: string): Promise<LoanRepayment | undefined> {
+    const rows = await this.db.select().from(schema.loanRepayments).where(eq(schema.loanRepayments.id, id));
+    return rows[0] as LoanRepayment | undefined;
+  }
+
   async createRepayment(data: Omit<LoanRepayment, "id">): Promise<LoanRepayment> {
     const id = randomUUID();
 // @ts-expect-error
@@ -627,6 +702,11 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRepayment(id: string): Promise<void> {
     await this.db.delete(schema.loanRepayments).where(eq(schema.loanRepayments.id, id));
+  }
+
+  async hasGroupSettings(groupId: string): Promise<boolean> {
+    const rows = await this.db.select().from(schema.groupSettings).where(eq(schema.groupSettings.groupId, groupId));
+    return rows.length > 0;
   }
 
   async getGroupSettings(groupId: string): Promise<GroupSettings> {
@@ -712,6 +792,39 @@ export class DatabaseStorage implements IStorage {
         usedAt: new Date()
       });
     });
+  }
+
+  // ─── Affiliated Banks ──────────────────────────────────────────────────────
+
+  async getBanksByGroupId(groupId: string): Promise<AffiliatedBank[]> {
+    const rows = await this.db.select().from(schema.affiliatedBanks)
+      .where(eq(schema.affiliatedBanks.groupId, groupId));
+    return rows as AffiliatedBank[];
+  }
+
+  async getBankById(id: string): Promise<AffiliatedBank | undefined> {
+    const rows = await this.db.select().from(schema.affiliatedBanks)
+      .where(eq(schema.affiliatedBanks.id, id));
+    return rows[0] as AffiliatedBank | undefined;
+  }
+
+  async createBank(data: Omit<AffiliatedBank, "id">): Promise<AffiliatedBank> {
+    const id = randomUUID();
+// @ts-expect-error
+    await this.db.insert(schema.affiliatedBanks).values({ ...data, id });
+    const rows = await this.db.select().from(schema.affiliatedBanks)
+      .where(eq(schema.affiliatedBanks.id, id));
+    return rows[0] as AffiliatedBank;
+  }
+
+  async updateBank(id: string, data: Partial<AffiliatedBank>): Promise<AffiliatedBank | undefined> {
+// @ts-expect-error
+    await this.db.update(schema.affiliatedBanks).set(data).where(eq(schema.affiliatedBanks.id, id));
+    return this.getBankById(id);
+  }
+
+  async deleteBank(id: string): Promise<void> {
+    await this.db.delete(schema.affiliatedBanks).where(eq(schema.affiliatedBanks.id, id));
   }
 }
 

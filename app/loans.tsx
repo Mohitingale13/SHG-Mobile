@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData, Loan } from "@/contexts/DataContext";
+import { calculateShgEmi, calculateBankEmi } from "@/shared/accounting";
 import Colors from "@/constants/colors";
 import FilterPicker from "@/components/FilterPicker";
 
@@ -24,6 +25,9 @@ function statusColor(status: Loan["status"]): string {
 function LoanItem({ loan }: { loan: Loan }) {
   const { t } = useLanguage();
   const color = statusColor(loan.status);
+  const shgEmi = calculateShgEmi(loan);
+  const bankEmi = calculateBankEmi(loan);
+  const totalEmi = shgEmi + bankEmi;
 
   return (
     <Pressable
@@ -31,8 +35,13 @@ function LoanItem({ loan }: { loan: Loan }) {
       onPress={() => router.push({ pathname: "/loan/[id]", params: { id: loan.id } })}
     >
       <View style={styles.loanHeader}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Text style={styles.loanName}>{loan.memberName}</Text>
+          {loan.hasBankLoan && (
+            <View style={{ backgroundColor: Colors.light.primary + "15", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+              <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 10, color: Colors.light.primary }}>{t("bank.bank_assisted_loan")}</Text>
+            </View>
+          )}
           {loan.resolutionNo ? (
             <Text style={styles.resNo}>{t("resolutionNo")} {loan.resolutionNo}</Text>
           ) : null}
@@ -52,9 +61,13 @@ function LoanItem({ loan }: { loan: Loan }) {
           <Text style={styles.detailValue}>{loan.interest}%</Text>
         </View>
         <View style={styles.loanDetail}>
+          <Text style={styles.detailLabel}>{t("monthly_installment")}</Text>
+          <Text style={styles.detailValue}>Rs. {totalEmi.toLocaleString("en-IN")}</Text>
+        </View>
+        <View style={styles.loanDetail}>
           <Text style={styles.detailLabel}>{t("remaining")}</Text>
-          <Text style={[styles.detailValue, { color: loan.remainingBalance > 0 ? Colors.light.danger : Colors.light.success }]}>
-            Rs. {loan.remainingBalance.toLocaleString("en-IN")}
+          <Text style={[styles.detailValue, { color: (loan.remainingBalance + (loan.bankRemainingBalance || 0)) > 0 ? Colors.light.danger : Colors.light.success }]}>
+            Rs. {(loan.remainingBalance + (loan.bankRemainingBalance || 0)).toLocaleString("en-IN")}
           </Text>
         </View>
       </View>

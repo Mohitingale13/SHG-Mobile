@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  TextInput, Modal,
+  TextInput, Modal, Alert, Switch
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +10,7 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
+import { resolveRepaymentAmounts, calculateShgTotal, calculateBankTotal, calculateShgEmi, calculateBankEmi } from "@/shared/accounting";
 import Colors from "@/constants/colors";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -36,16 +37,46 @@ export default function LoanDetailScreen() {
     treasurerApproveLoan, treasurerRejectLoan,
     approveLoan, rejectLoan,
     addRepayment, deleteRepayment, deleteLoan,
+    affiliatedBanks,
   } = useData();
   const loan = loans.find((l) => l.id === id);
 
   const [resolutionNo, setResolutionNo] = useState("");
   const [repayAmount, setRepayAmount] = useState("");
+  const [shgRepayAmount, setShgRepayAmount] = useState("");
+  const [bankRepayAmount, setBankRepayAmount] = useState("");
   const [showRepay, setShowRepay] = useState(false);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [deleteRepaymentId, setDeleteRepaymentId] = useState<string | null>(null);
   const [resolutionError, setResolutionError] = useState(false);
+
+  const [hasBankLoan, setHasBankLoan] = useState(loan?.hasBankLoan || false);
+  const [bankName, setBankName] = useState(loan?.bankName || "");
+  const [bankAmount, setBankAmount] = useState(loan?.bankLoanAmount?.toString() || "");
+  const [bankInterestRate, setBankInterestRate] = useState(loan?.bankInterestRate?.toString() || "");
+  const [bankDuration, setBankDuration] = useState(loan?.bankDuration?.toString() || "");
+  const [bankRemarks, setBankRemarks] = useState(loan?.bankLoanRemarks || "");
+
+  const validateBankDetails = () => {
+    if (!hasBankLoan) return true;
+    if (!bankName.trim()) { Alert.alert(t("error"), t("bank.bank_required")); return false; }
+    if (!parseInt(bankAmount) || parseInt(bankAmount) <= 0) { Alert.alert(t("error"), t("bank.bank_amount_required")); return false; }
+    if (!parseInt(bankDuration) || parseInt(bankDuration) <= 0) { Alert.alert(t("error"), t("bank.bank_duration_required")); return false; }
+    return true;
+  };
+
+  const getBankPayload = () => {
+    if (!hasBankLoan) return { hasBankLoan: false };
+    return {
+      hasBankLoan: true,
+      bankName: bankName.trim(),
+      bankAmount: parseInt(bankAmount),
+      bankInterestRate: parseFloat(bankInterestRate) || 0,
+      bankDuration: parseInt(bankDuration),
+      bankRemarks: bankRemarks.trim() || undefined
+    };
+  };
 
   if (!loan) {
     return (
@@ -59,66 +90,128 @@ export default function LoanDetailScreen() {
   const repayments = loanRepayments
     .filter((r) => r.loanId === loan.id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const shgTotal = calculateShgTotal(loan);
+  const bankTotal = calculateBankTotal(loan);
+  const shgEmi = calculateShgEmi(loan);
+  const bankEmi = calculateBankEmi(loan);
+  let currentShgRem = shgTotal;
+  let currentBankRem = bankTotal;
+
+  const passbookEntries = [...repayments].reverse().map(r => {
+    const { shgAmount, bankAmount } = resolveRepaymentAmounts(r);
+    currentShgRem = Math.max(0, currentShgRem - shgAmount);
+    currentBankRem = Math.max(0, currentBankRem - bankAmount);
+    return {
+      ...r,
+      resolvedShg: shgAmount,
+      resolvedBank: bankAmount,
+      runShgRem: currentShgRem,
+      runBankRem: currentBankRem,
+    };
+  }).reverse();
 
   const totalRepaid = repayments.reduce((sum, r) => sum + r.amount, 0);
   const color = loanStatusColor(loan.status);
-  
+
   const totalInterest = Math.round(loan.amount * (loan.interest / 100) * loan.duration);
-  const totalRepayable = loan.amount + totalInterest;
+  const bankInterest = loan.hasBankLoan ? Math.round((loan.bankLoanAmount || 0) * ((loan.bankInterestRate || 0) / 100) * (loan.bankDuration || 0)) : 0;
+  const totalRepayable = loan.amount + totalInterest + (loan.hasBankLoan ? ((loan.bankLoanAmount || 0) + bankInterest) : 0);
   const rawProgress = totalRepayable > 0 ? (totalRepaid / totalRepayable) * 100 : 0;
   const progress = Math.min(100, Math.max(0, rawProgress));
 
   const handleTreasurerApprove = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await treasurerApproveLoan(loan.id);
+    try {
+      if (!validateBankDetails()) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await treasurerApproveLoan(loan.id, getBankPayload());
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleTreasurerReject = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await treasurerRejectLoan(loan.id, rejectReason.trim() || undefined);
-    setRejectReason("");
+    try {
+      setDialog(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await treasurerRejectLoan(loan.id, rejectReason.trim() || undefined);
+      setRejectReason("");
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleApprove = async () => {
-    if (!resolutionNo.trim()) {
-      setResolutionError(true);
-      return;
+    try {
+      if (!resolutionNo.trim()) {
+        setResolutionError(true);
+        return;
+      }
+      if (!validateBankDetails()) return;
+      setResolutionError(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await approveLoan(loan.id, resolutionNo.trim(), undefined, getBankPayload());
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
     }
-    setResolutionError(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await approveLoan(loan.id, resolutionNo.trim());
   };
 
   const handleReject = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await rejectLoan(loan.id, rejectReason.trim() || undefined);
-    setRejectReason("");
+    try {
+      setDialog(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await rejectLoan(loan.id, rejectReason.trim() || undefined);
+      setRejectReason("");
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleRepay = async () => {
-    const num = parseInt(repayAmount);
-    if (!num || num <= 0) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await addRepayment(loan.id, num);
-    setRepayAmount("");
-    setShowRepay(false);
+    try {
+      if (loan.hasBankLoan) {
+        const shgNum = parseInt(shgRepayAmount) || 0;
+        const bankNum = parseInt(bankRepayAmount) || 0;
+        if (shgNum <= 0 && bankNum <= 0) {
+          Alert.alert(t("error"), t("bank.enter_at_least_one"));
+          return;
+        }
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await addRepayment(loan.id, { shgAmount: shgNum, bankAmount: bankNum });
+        setShgRepayAmount("");
+        setBankRepayAmount("");
+      } else {
+        const num = parseInt(repayAmount);
+        if (!num || num <= 0) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await addRepayment(loan.id, { shgAmount: num, bankAmount: 0 });
+        setRepayAmount("");
+      }
+      setShowRepay(false);
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleDeleteRepayment = async () => {
-    if (!deleteRepaymentId) return;
-    setDeleteRepaymentId(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await deleteRepayment(deleteRepaymentId, loan.id);
+    try {
+      if (!deleteRepaymentId) return;
+      setDeleteRepaymentId(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await deleteRepayment(deleteRepaymentId);
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleDeleteLoan = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await deleteLoan(loan.id);
-    router.back();
+    try {
+      setDialog(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await deleteLoan(loan.id);
+      router.back();
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const showTreasurerActions = isTreasurer && loan.status === "pending_treasurer";
@@ -126,7 +219,97 @@ export default function LoanDetailScreen() {
   const isDirectOverride = loan.presidentOverride === true;
   const isFinal = loan.status === "approved" || loan.status === "rejected" || loan.status === "treasurer_rejected";
   const showRepayment = loan.status === "approved";
-  const canDelete = isPresident && loan.status !== "approved";
+  const canDelete = isPresident;
+
+  const renderBankForm = () => (
+    <View style={{ marginTop: 12 }}>
+      <View style={[styles.inputContainer, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12, paddingHorizontal: 16, backgroundColor: Colors.light.card, borderWidth: 1, borderColor: hasBankLoan ? Colors.light.primary : Colors.light.border }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { marginBottom: 2 }]}>{t("Bank Assisted Loan")}</Text>
+          <Text style={{ fontSize: 12, color: Colors.light.textMuted, fontFamily: "Poppins_400Regular" }}>
+            {t("Bank assisted loan desc")}
+          </Text>
+        </View>
+        <Switch
+          value={hasBankLoan}
+          onValueChange={setHasBankLoan}
+          trackColor={{ false: Colors.light.border, true: Colors.light.primary + "80" }}
+          thumbColor={hasBankLoan ? Colors.light.primary : "#f4f3f4"}
+        />
+      </View>
+
+      {hasBankLoan && (
+        <View style={styles.bankFormCard}>
+          <Text style={styles.label}>{t("bank.select_bank")} *</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder={t("bank.select_bank")}
+              placeholderTextColor={Colors.light.textMuted}
+              value={bankName}
+              onChangeText={setBankName}
+              autoCapitalize="words"
+            />
+          </View>
+
+          <Text style={[styles.label, { marginTop: 12 }]}>{t("bank.bank_loan_amount")} *</Text>
+          <View style={styles.inputContainer}>
+            <Text style={styles.rupeeText}>Rs.</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="0"
+              placeholderTextColor={Colors.light.textMuted}
+              value={bankAmount}
+              onChangeText={setBankAmount}
+              keyboardType="number-pad"
+            />
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>{t("bank.bank_interest_rate")}</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0"
+                  placeholderTextColor={Colors.light.textMuted}
+                  value={bankInterestRate}
+                  onChangeText={setBankInterestRate}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.suffix}>%</Text>
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>{t("bank.bank_loan_duration")} *</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0"
+                  placeholderTextColor={Colors.light.textMuted}
+                  value={bankDuration}
+                  onChangeText={setBankDuration}
+                  keyboardType="number-pad"
+                />
+                <Text style={styles.suffix}>{t("auto.mo")}</Text>
+              </View>
+            </View>
+          </View>
+
+          <Text style={[styles.label, { marginTop: 12 }]}>{t("bank.bank_loan_remarks")}</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder={t("enter_remarks")}
+              placeholderTextColor={Colors.light.textMuted}
+              value={bankRemarks}
+              onChangeText={setBankRemarks}
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.light.background }}>
@@ -173,34 +356,109 @@ export default function LoanDetailScreen() {
           </View>
         )}
 
-        <View style={styles.amountCard}>
-          <Text style={styles.amountLabel}>{t("loanAmount")}</Text>
-          <Text style={styles.amountValue}>Rs. {loan.amount.toLocaleString("en-IN")}</Text>
-          <View style={styles.amountRow}>
-            <View style={styles.amountDetail}>
-              <Text style={styles.amountDetailLabel}>{t("interest")}</Text>
-              <Text style={styles.amountDetailValue}>{loan.interest}%</Text>
-            </View>
-            <View style={styles.amountDetail}>
-              <Text style={styles.amountDetailLabel}>{t("duration")}</Text>
-              <Text style={styles.amountDetailValue}>{loan.duration} {t("auto.mo")}</Text>
-            </View>
-            <View style={styles.amountDetail}>
-              <Text style={styles.amountDetailLabel}>{t("remaining")}</Text>
-              <Text style={[styles.amountDetailValue, { color: loan.remainingBalance > 0 ? Colors.light.danger : Colors.light.success }]}>
-                Rs. {loan.remainingBalance.toLocaleString("en-IN")}
-              </Text>
-            </View>
-          </View>
-          {showRepayment && (
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` as any }]} />
+        {loan.hasBankLoan ? (
+          <View style={styles.amountCard}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View>
+                <Text style={styles.amountLabel}>{t("bank.combined_outstanding")}</Text>
+                <Text style={styles.amountValue}>Rs. {((loan.remainingBalance || 0) + (loan.bankRemainingBalance || 0)).toLocaleString("en-IN")}</Text>
               </View>
-              <Text style={styles.progressText}>{Math.round(progress)}% {t("auto.repaid")}</Text>
+              <View style={{ backgroundColor: Colors.light.primary + "20", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 12, color: Colors.light.primary }}>
+                  {t("bank.shg_and_bank")}
+                </Text>
+              </View>
             </View>
-          )}
-        </View>
+
+            <View style={{ flexDirection: "row", marginTop: 16, gap: 12 }}>
+              <View style={{ flex: 1, backgroundColor: Colors.light.background, padding: 10, borderRadius: 10 }}>
+                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: Colors.light.text, marginBottom: 8 }}>{t("bank.shg_portion")}</Text>
+                <View style={{ gap: 4 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("loanAmount")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>Rs. {loan.amount.toLocaleString("en-IN")}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("interest")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>{loan.interest}%</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("monthly_installment")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>Rs. {shgEmi.toLocaleString("en-IN")}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("bank.shg_outstanding")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_700Bold", color: loan.remainingBalance > 0 ? Colors.light.danger : Colors.light.success }}>Rs. {loan.remainingBalance.toLocaleString("en-IN")}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ flex: 1, backgroundColor: Colors.light.background, padding: 10, borderRadius: 10 }}>
+                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: Colors.light.text, marginBottom: 8 }}>{t("bank.bank_portion")}</Text>
+                <View style={{ gap: 4 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("loanAmount")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>Rs. {(loan.bankLoanAmount || 0).toLocaleString("en-IN")}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("interest")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>{loan.bankInterestRate || 0}%</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("monthly_installment")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>Rs. {bankEmi.toLocaleString("en-IN")}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("bank.bank_outstanding")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_700Bold", color: (loan.bankRemainingBalance || 0) > 0 ? Colors.light.danger : Colors.light.success }}>Rs. {(loan.bankRemainingBalance || 0).toLocaleString("en-IN")}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {showRepayment && (
+              <View style={[styles.progressContainer, { marginTop: 16 }]}>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` as any }]} />
+                </View>
+                <Text style={styles.progressText}>{Math.round(progress)}% {t("auto.repaid")}</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={styles.amountCard}>
+            <Text style={styles.amountLabel}>{t("loanAmount")}</Text>
+            <Text style={styles.amountValue}>Rs. {loan.amount.toLocaleString("en-IN")}</Text>
+            <View style={styles.amountRow}>
+              <View style={styles.amountDetail}>
+                <Text style={styles.amountDetailLabel}>{t("interest")}</Text>
+                <Text style={styles.amountDetailValue}>{loan.interest}%</Text>
+              </View>
+              <View style={styles.amountDetail}>
+                <Text style={styles.amountDetailLabel}>{t("duration")}</Text>
+                <Text style={styles.amountDetailValue}>{loan.duration} {t("auto.mo")}</Text>
+              </View>
+              <View style={styles.amountDetail}>
+                <Text style={styles.amountDetailLabel}>{t("monthly_installment")}</Text>
+                <Text style={styles.amountDetailValue}>Rs. {shgEmi.toLocaleString("en-IN")}</Text>
+              </View>
+              <View style={styles.amountDetail}>
+                <Text style={styles.amountDetailLabel}>{t("remaining")}</Text>
+                <Text style={[styles.amountDetailValue, { color: loan.remainingBalance > 0 ? Colors.light.danger : Colors.light.success }]}>
+                  Rs. {loan.remainingBalance.toLocaleString("en-IN")}
+                </Text>
+              </View>
+            </View>
+            {showRepayment && (
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` as any }]} />
+                </View>
+                <Text style={styles.progressText}>{Math.round(progress)}% {t("auto.repaid")}</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.infoCard}>
           <Text style={styles.infoRow}>{t("name")}: {loan.memberName}</Text>
@@ -221,11 +479,11 @@ export default function LoanDetailScreen() {
         )}
 
         {loan.overrideReason && (
-          <View style={[styles.rejectionBox, { backgroundColor: "#F59E0B15", borderColor: "#FDE68A" }]}> 
+          <View style={[styles.rejectionBox, { backgroundColor: "#F59E0B15", borderColor: "#FDE68A" }]}>
             <Text style={[styles.rejectionLabel, { color: "#D97706" }]}>{t("override_history")}</Text>
             <Text style={[styles.rejectionText, { color: "#92400E" }]}>{loan.overrideReason}</Text>
             {loan.overrideAt && (
-              <Text style={[styles.rejectionMeta, { color: "#92400E" }]}> 
+              <Text style={[styles.rejectionMeta, { color: "#92400E" }]}>
                 {new Date(loan.overrideAt).toLocaleDateString("en-IN")}
               </Text>
             )}
@@ -269,6 +527,7 @@ export default function LoanDetailScreen() {
             <Text style={styles.approvalCardSub}>
               {t("auto.your_decision_will_be_forwarded")}
             </Text>
+            {renderBankForm()}
             <View style={styles.approvalButtons}>
               <Pressable style={[styles.approveBtn, { backgroundColor: Colors.light.success }]} onPress={() => setDialog("approveTreasurer")}>
                 <Ionicons name="checkmark" size={18} color="#fff" />
@@ -303,6 +562,7 @@ export default function LoanDetailScreen() {
                 {t("auto.resolution_number_is_required")}
               </Text>
             )}
+            {renderBankForm()}
             <View style={styles.approvalButtons}>
               <Pressable style={[styles.approveBtn, { backgroundColor: Colors.light.primary }]} onPress={handleApprove}>
                 <Ionicons name="checkmark" size={18} color="#fff" />
@@ -333,39 +593,91 @@ export default function LoanDetailScreen() {
 
             {showRepay && (
               <View style={styles.repayInput}>
-                <View style={styles.inputRow}>
-                  <Text style={styles.rupee}>Rs.</Text>
-                  <TextInput
-                    style={styles.repayField}
-                    value={repayAmount}
-                    onChangeText={setRepayAmount}
-                    placeholder="0"
-                    placeholderTextColor={Colors.light.textMuted}
-                    keyboardType="number-pad"
-                    autoFocus
-                  />
-                  <Pressable style={styles.repayBtn} onPress={handleRepay}>
-                    <Ionicons name="checkmark" size={20} color="#fff" />
-                  </Pressable>
-                </View>
+                {loan.hasBankLoan ? (
+                  <View style={{ gap: 10, width: "100%" }}>
+                    <View style={styles.inputRow}>
+                      <Text style={styles.rupee}>SHG Rs.</Text>
+                      <TextInput
+                        style={styles.repayField}
+                        value={shgRepayAmount}
+                        onChangeText={setShgRepayAmount}
+                        placeholder="0"
+                        placeholderTextColor={Colors.light.textMuted}
+                        keyboardType="number-pad"
+                        autoFocus
+                      />
+                    </View>
+                    <View style={styles.inputRow}>
+                      <Text style={styles.rupee}>Bank Rs.</Text>
+                      <TextInput
+                        style={styles.repayField}
+                        value={bankRepayAmount}
+                        onChangeText={setBankRepayAmount}
+                        placeholder="0"
+                        placeholderTextColor={Colors.light.textMuted}
+                        keyboardType="number-pad"
+                      />
+                    </View>
+                    <Pressable style={[styles.repayBtn, { width: "100%", marginTop: 8, height: 48, justifyContent: 'center', backgroundColor: Colors.light.primary, borderRadius: 14 }]} onPress={handleRepay}>
+                      <Text style={{ fontFamily: "Poppins_600SemiBold", color: "#fff", fontSize: 15, textAlign: 'center' }}>{t("save")}</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={styles.inputRow}>
+                    <Text style={styles.rupee}>Rs.</Text>
+                    <TextInput
+                      style={styles.repayField}
+                      value={repayAmount}
+                      onChangeText={setRepayAmount}
+                      placeholder="0"
+                      placeholderTextColor={Colors.light.textMuted}
+                      keyboardType="number-pad"
+                      autoFocus
+                    />
+                    <Pressable style={styles.repayBtn} onPress={handleRepay}>
+                      <Ionicons name="checkmark" size={20} color="#fff" />
+                    </Pressable>
+                  </View>
+                )}
               </View>
             )}
 
-            {repayments.length > 0 ? (
-              repayments.map((r) => (
-                <View key={r.id} style={styles.repaymentItem}>
-                  <Ionicons name="return-down-forward" size={16} color={Colors.light.success} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.repaymentDate}>{new Date(r.date).toLocaleDateString("en-IN")}</Text>
+            {passbookEntries.length > 0 ? (
+              passbookEntries.map((r, i) => (
+                <View key={r.id} style={[styles.repaymentItem, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="return-down-forward" size={16} color={Colors.light.success} />
+                      <Text style={styles.repaymentDate}>{new Date(r.date).toLocaleDateString("en-IN")}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={styles.repaymentAmount}>Rs. {r.amount.toLocaleString("en-IN")}</Text>
+                      {isPresident && (
+                        <Pressable onPress={() => setDeleteRepaymentId(r.id)}>
+                          <Ionicons name="trash-outline" size={16} color={Colors.light.danger} />
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
-                  <Text style={styles.repaymentAmount}>Rs. {r.amount.toLocaleString("en-IN")}</Text>
-                  {isPresident && (
-                    <Pressable
-                      onPress={() => setDeleteRepaymentId(r.id)}
-                      style={{ padding: 4, marginLeft: 4 }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={Colors.light.danger} />
-                    </Pressable>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: Colors.light.background, padding: 8, borderRadius: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 11, color: Colors.light.text }}>SHG Portion</Text>
+                      <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.light.textSecondary }}>Paid: Rs. {r.resolvedShg.toLocaleString("en-IN")}</Text>
+                      <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.light.textSecondary }}>Rem: Rs. {r.runShgRem.toLocaleString("en-IN")}</Text>
+                    </View>
+                    {loan.hasBankLoan && (
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 11, color: Colors.light.primary }}>Bank Portion</Text>
+                        <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.light.textSecondary }}>Paid: Rs. {r.resolvedBank.toLocaleString("en-IN")}</Text>
+                        <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.light.textSecondary }}>Rem: Rs. {r.runBankRem.toLocaleString("en-IN")}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {r.remarks && (
+                    <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.light.textSecondary, marginTop: 4, fontStyle: 'italic' }}>
+                      "{r.remarks}"
+                    </Text>
                   )}
                 </View>
               ))
@@ -809,4 +1121,46 @@ const styles = StyleSheet.create({
   rejectionLabel: { fontFamily: "Poppins_600SemiBold", fontSize: 12, color: Colors.light.danger },
   rejectionText: { fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.light.text, marginTop: 2 },
   rejectionMeta: { fontFamily: "Poppins_400Regular", fontSize: 10, color: Colors.light.textMuted, marginTop: 4 },
+  bankFormCard: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  label: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    marginBottom: 6,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.light.inputBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    paddingHorizontal: 12,
+  },
+  input: {
+    flex: 1,
+    fontFamily: "Poppins_400Regular",
+    fontSize: 15,
+    color: Colors.light.text,
+    paddingVertical: 12,
+  },
+  rupeeText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 15,
+    color: Colors.light.textMuted,
+    marginRight: 8,
+  },
+  suffix: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+    color: Colors.light.textMuted,
+    marginLeft: 8,
+  },
 });

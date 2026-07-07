@@ -23,6 +23,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="(super-admin)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="(main)" options={{ headerShown: false }} />
       <Stack.Screen name="create-meeting" options={{ headerShown: false, presentation: "modal" }} />

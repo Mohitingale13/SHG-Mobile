@@ -103,6 +103,7 @@ export default function SuperAdminDashboard() {
             value={newGroupName}
             onChangeText={setNewGroupName}
           />
+          <Text style={{ fontSize: 12, color: Colors.light.secondary, marginBottom: 4 }}>{t("auto.language")}</Text>
           <View style={styles.langSelector}>
             <Pressable
               style={[styles.langBtn, newGroupLang === "mr" && styles.langBtnActive]}
@@ -153,8 +154,8 @@ export default function SuperAdminDashboard() {
                     onPress={() => toggleStatus(g)}
                   >
                     <Text style={styles.actionBtnText}>
-                      {g.status === "suspended" 
-                        ? (t("auto.reactivate")) 
+                      {g.status === "suspended"
+                        ? (t("auto.reactivate"))
                         : (t("auto.suspend"))}
                     </Text>
                   </Pressable>

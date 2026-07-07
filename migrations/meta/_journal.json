@@ -8,6 +8,13 @@
       "when": 1783089255925,
       "tag": "0000_right_bug",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783328087222,
+      "tag": "0001_youthful_giant_man",
+      "breakpoints": true
     }
   ]
 }
