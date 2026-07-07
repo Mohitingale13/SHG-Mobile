@@ -44,3 +44,19 @@ export function calculateBankTotal(loan: any): number {
   const duration = loan.bankDuration || 0;
   return principal + Math.round(principal * (interestRate / 100) * duration);
 }
+
+/**
+ * Calculates the Equated Monthly Installment (EMI) for the SHG portion of a loan
+ */
+export function calculateShgEmi(loan: any): number {
+  if (!loan.duration || loan.duration <= 0) return 0;
+  return Math.round(calculateShgTotal(loan) / loan.duration);
+}
+
+/**
+ * Calculates the Equated Monthly Installment (EMI) for the Bank portion of a loan
+ */
+export function calculateBankEmi(loan: any): number {
+  if (!loan.hasBankLoan || !loan.bankDuration || loan.bankDuration <= 0) return 0;
+  return Math.round(calculateBankTotal(loan) / loan.bankDuration);
+}

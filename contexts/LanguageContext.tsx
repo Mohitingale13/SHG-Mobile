@@ -108,6 +108,7 @@ export const translations: Record<string, any> = {
     "pdf_president_signature": { "en": "President Signature", "mr": "अध्यक्षांची स्वाक्षरी" },
     "pdf_treasurer_signature": { "en": "Treasurer Signature", "mr": "खजिनदाराची स्वाक्षरी" },
     "pdf_detailed_transactions": { "en": "Detailed Transactions", "mr": "तपशीलवार व्यवहार" },
+    "pdf_monthly_installment": { "en": "Monthly Installment", "mr": "मासिक हप्ता" },
 
     "search": { "en": "Search", "mr": "शोधा" },
     "filters": { "en": "Filters", "mr": "फिल्टर्स" },
@@ -142,6 +143,8 @@ export const translations: Record<string, any> = {
     "direct_reject": { "en": "Direct Reject", "mr": "थेट नकारा" },
     "rejection_reason": { "en": "Rejection Reason", "mr": "नाकारण्याचे कारण" },
     "reject": { "en": "Reject", "mr": "नाकार" },
+    "due": { "en": "Due", "mr": "थकबाकी" },
+    "monthly_installment": { "en": "Monthly Installment", "mr": "मासिक हप्ता" },
     "appname": {
       "en": "SHG Records",
       "mr": "बचत गट नोंदी"
@@ -1324,13 +1327,13 @@ export const translations: Record<string, any> = {
       "mr": "गट अहवाल"
     },
     "reminder": {
-      "contribution_pending_title": { "en": "monthly contribution pending", "mr": "मासिक योगदान प्रलंबित" },
-      "contribution_amount": { "en": "contribution amount", "mr": "योगदान रक्कम" },
-      "due_date": { "en": "due date", "mr": "देय तारीख" },
-      "days_remaining": { "en": "days remaining", "mr": "दिवस शिल्लक" },
+      "contribution_pending_title": { "en": "Monthly Contribution Pending", "mr": "मासिक योगदान प्रलंबित" },
+      "contribution_amount": { "en": "Contribution Amount", "mr": "योगदान रक्कम" },
+      "due_date": { "en": "Due Date", "mr": "देय तारीख" },
+      "days_remaining": { "en": "Days Remaining", "mr": "दिवस शिल्लक" },
       "overdue_by": { "en": "overdue by", "mr": "उशीर झाला" },
       "days": { "en": "days", "mr": "दिवस" },
-      "late_fee_applicable": { "en": "late fee", "mr": "विलंब शुल्क" },
+      "late_fee_applicable": { "en": "Late fee", "mr": "विलंब शुल्क" },
       "total_payable": { "en": "total payable", "mr": "एकूण देय" },
       "pay_now": { "en": "pay now", "mr": "आता भरा" },
       "no_late_fee": { "en": "no late fee", "mr": "विलंब शुल्क नाही" },
@@ -1756,8 +1759,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const setLanguage = useCallback(async (lang: Language) => {
     setLanguageState(lang);
-    await setItem("shg_language", lang).catch(() => {});
-    
+    await setItem("shg_language", lang).catch(() => { });
+
     try {
       const token = await getToken();
       if (token) {
@@ -1800,7 +1803,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
           break;
         }
       }
-      
+
       if (found && result && typeof result === 'object' && result[language]) {
         return result[language];
       }

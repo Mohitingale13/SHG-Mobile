@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
-import { resolveRepaymentAmounts, calculateShgTotal, calculateBankTotal } from "@/shared/accounting";
+import { resolveRepaymentAmounts, calculateShgTotal, calculateBankTotal, calculateShgEmi, calculateBankEmi } from "@/shared/accounting";
 import Colors from "@/constants/colors";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -50,7 +50,7 @@ export default function LoanDetailScreen() {
   const [rejectReason, setRejectReason] = useState("");
   const [deleteRepaymentId, setDeleteRepaymentId] = useState<string | null>(null);
   const [resolutionError, setResolutionError] = useState(false);
-  
+
   const [hasBankLoan, setHasBankLoan] = useState(loan?.hasBankLoan || false);
   const [bankName, setBankName] = useState(loan?.bankName || "");
   const [bankAmount, setBankAmount] = useState(loan?.bankLoanAmount?.toString() || "");
@@ -92,9 +92,11 @@ export default function LoanDetailScreen() {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const shgTotal = calculateShgTotal(loan);
   const bankTotal = calculateBankTotal(loan);
+  const shgEmi = calculateShgEmi(loan);
+  const bankEmi = calculateBankEmi(loan);
   let currentShgRem = shgTotal;
   let currentBankRem = bankTotal;
-  
+
   const passbookEntries = [...repayments].reverse().map(r => {
     const { shgAmount, bankAmount } = resolveRepaymentAmounts(r);
     currentShgRem = Math.max(0, currentShgRem - shgAmount);
@@ -110,7 +112,7 @@ export default function LoanDetailScreen() {
 
   const totalRepaid = repayments.reduce((sum, r) => sum + r.amount, 0);
   const color = loanStatusColor(loan.status);
-  
+
   const totalInterest = Math.round(loan.amount * (loan.interest / 100) * loan.duration);
   const bankInterest = loan.hasBankLoan ? Math.round((loan.bankLoanAmount || 0) * ((loan.bankInterestRate || 0) / 100) * (loan.bankDuration || 0)) : 0;
   const totalRepayable = loan.amount + totalInterest + (loan.hasBankLoan ? ((loan.bankLoanAmount || 0) + bankInterest) : 0);
@@ -118,71 +120,98 @@ export default function LoanDetailScreen() {
   const progress = Math.min(100, Math.max(0, rawProgress));
 
   const handleTreasurerApprove = async () => {
-    if (!validateBankDetails()) return;
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await treasurerApproveLoan(loan.id, getBankPayload());
+    try {
+      if (!validateBankDetails()) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await treasurerApproveLoan(loan.id, getBankPayload());
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleTreasurerReject = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await treasurerRejectLoan(loan.id, rejectReason.trim() || undefined);
-    setRejectReason("");
+    try {
+      setDialog(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await treasurerRejectLoan(loan.id, rejectReason.trim() || undefined);
+      setRejectReason("");
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleApprove = async () => {
-    if (!resolutionNo.trim()) {
-      setResolutionError(true);
-      return;
+    try {
+      if (!resolutionNo.trim()) {
+        setResolutionError(true);
+        return;
+      }
+      if (!validateBankDetails()) return;
+      setResolutionError(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await approveLoan(loan.id, resolutionNo.trim(), undefined, getBankPayload());
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
     }
-    if (!validateBankDetails()) return;
-    setResolutionError(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await approveLoan(loan.id, resolutionNo.trim(), undefined, getBankPayload());
   };
 
   const handleReject = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await rejectLoan(loan.id, rejectReason.trim() || undefined);
-    setRejectReason("");
+    try {
+      setDialog(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await rejectLoan(loan.id, rejectReason.trim() || undefined);
+      setRejectReason("");
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleRepay = async () => {
-    if (loan.hasBankLoan) {
-      const shgNum = parseInt(shgRepayAmount) || 0;
-      const bankNum = parseInt(bankRepayAmount) || 0;
-      if (shgNum <= 0 && bankNum <= 0) {
-        Alert.alert(t("error"), t("bank.enter_at_least_one"));
-        return;
+    try {
+      if (loan.hasBankLoan) {
+        const shgNum = parseInt(shgRepayAmount) || 0;
+        const bankNum = parseInt(bankRepayAmount) || 0;
+        if (shgNum <= 0 && bankNum <= 0) {
+          Alert.alert(t("error"), t("bank.enter_at_least_one"));
+          return;
+        }
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await addRepayment(loan.id, { shgAmount: shgNum, bankAmount: bankNum });
+        setShgRepayAmount("");
+        setBankRepayAmount("");
+      } else {
+        const num = parseInt(repayAmount);
+        if (!num || num <= 0) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await addRepayment(loan.id, { shgAmount: num, bankAmount: 0 });
+        setRepayAmount("");
       }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await addRepayment(loan.id, { shgAmount: shgNum, bankAmount: bankNum });
-      setShgRepayAmount("");
-      setBankRepayAmount("");
-    } else {
-      const num = parseInt(repayAmount);
-      if (!num || num <= 0) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await addRepayment(loan.id, { shgAmount: num, bankAmount: 0 });
-      setRepayAmount("");
+      setShowRepay(false);
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
     }
-    setShowRepay(false);
   };
 
   const handleDeleteRepayment = async () => {
-    if (!deleteRepaymentId) return;
-    setDeleteRepaymentId(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await deleteRepayment(deleteRepaymentId);
+    try {
+      if (!deleteRepaymentId) return;
+      setDeleteRepaymentId(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await deleteRepayment(deleteRepaymentId);
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const handleDeleteLoan = async () => {
-    setDialog(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await deleteLoan(loan.id);
-    router.back();
+    try {
+      setDialog(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await deleteLoan(loan.id);
+      router.back();
+    } catch (e: any) {
+      Alert.alert(t("error"), e.message || t("error"));
+    }
   };
 
   const showTreasurerActions = isTreasurer && loan.status === "pending_treasurer";
@@ -196,9 +225,9 @@ export default function LoanDetailScreen() {
     <View style={{ marginTop: 12 }}>
       <View style={[styles.inputContainer, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12, paddingHorizontal: 16, backgroundColor: Colors.light.card, borderWidth: 1, borderColor: hasBankLoan ? Colors.light.primary : Colors.light.border }]}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.label, { marginBottom: 2 }]}>{t("bank.assisted_loan")}</Text>
+          <Text style={[styles.label, { marginBottom: 2 }]}>{t("Bank Assisted Loan")}</Text>
           <Text style={{ fontSize: 12, color: Colors.light.textMuted, fontFamily: "Poppins_400Regular" }}>
-            {t("bank.assisted_loan_desc")}
+            {t("Bank assisted loan desc")}
           </Text>
         </View>
         <Switch
@@ -354,12 +383,16 @@ export default function LoanDetailScreen() {
                     <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>{loan.interest}%</Text>
                   </View>
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("monthly_installment")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>Rs. {shgEmi.toLocaleString("en-IN")}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                     <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("bank.shg_outstanding")}</Text>
                     <Text style={{ fontSize: 11, fontFamily: "Poppins_700Bold", color: loan.remainingBalance > 0 ? Colors.light.danger : Colors.light.success }}>Rs. {loan.remainingBalance.toLocaleString("en-IN")}</Text>
                   </View>
                 </View>
               </View>
-              
+
               <View style={{ flex: 1, backgroundColor: Colors.light.background, padding: 10, borderRadius: 10 }}>
                 <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: Colors.light.text, marginBottom: 8 }}>{t("bank.bank_portion")}</Text>
                 <View style={{ gap: 4 }}>
@@ -370,6 +403,10 @@ export default function LoanDetailScreen() {
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                     <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("interest")}</Text>
                     <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>{loan.bankInterestRate || 0}%</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("monthly_installment")}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}>Rs. {bankEmi.toLocaleString("en-IN")}</Text>
                   </View>
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                     <Text style={{ fontSize: 11, color: Colors.light.textSecondary }}>{t("bank.bank_outstanding")}</Text>
@@ -400,6 +437,10 @@ export default function LoanDetailScreen() {
               <View style={styles.amountDetail}>
                 <Text style={styles.amountDetailLabel}>{t("duration")}</Text>
                 <Text style={styles.amountDetailValue}>{loan.duration} {t("auto.mo")}</Text>
+              </View>
+              <View style={styles.amountDetail}>
+                <Text style={styles.amountDetailLabel}>{t("monthly_installment")}</Text>
+                <Text style={styles.amountDetailValue}>Rs. {shgEmi.toLocaleString("en-IN")}</Text>
               </View>
               <View style={styles.amountDetail}>
                 <Text style={styles.amountDetailLabel}>{t("remaining")}</Text>
@@ -438,11 +479,11 @@ export default function LoanDetailScreen() {
         )}
 
         {loan.overrideReason && (
-          <View style={[styles.rejectionBox, { backgroundColor: "#F59E0B15", borderColor: "#FDE68A" }]}> 
+          <View style={[styles.rejectionBox, { backgroundColor: "#F59E0B15", borderColor: "#FDE68A" }]}>
             <Text style={[styles.rejectionLabel, { color: "#D97706" }]}>{t("override_history")}</Text>
             <Text style={[styles.rejectionText, { color: "#92400E" }]}>{loan.overrideReason}</Text>
             {loan.overrideAt && (
-              <Text style={[styles.rejectionMeta, { color: "#92400E" }]}> 
+              <Text style={[styles.rejectionMeta, { color: "#92400E" }]}>
                 {new Date(loan.overrideAt).toLocaleDateString("en-IN")}
               </Text>
             )}

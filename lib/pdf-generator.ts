@@ -2,7 +2,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Platform, Alert } from "react-native";
-import { resolveRepaymentAmounts, calculateShgTotal, calculateBankTotal } from "../shared/accounting";
+import { resolveRepaymentAmounts, calculateShgTotal, calculateBankTotal, calculateShgEmi, calculateBankEmi } from "../shared/accounting";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -390,7 +390,12 @@ export async function generateGroupLoansReport({ group, president, loans, loanRe
       srNo = srNoOth++;
     }
 
-    const row = '<tr><td class="c">' + srNo + '</td><td>' + (member?.name || "—") + '</td><td>' + (member?.phoneNumber || "—") + '</td><td>' + formatDate(loan.createdAt) + '</td><td class="r">' + formatCurrency(loan.amount) + '</td><td class="r">' + (loan.hasBankLoan ? formatCurrency(loan.bankLoanAmount) : "—") + '</td><td class="c">' + (loan.interest || 0) + '% <br/> ' + (loan.duration || "—") + ' mo</td><td class="r">' + formatCurrency(repaid) + '</td><td class="r">' + (loan.hasBankLoan ? formatCurrency(bankRepaid) : "—") + '</td><td class="r">' + formatCurrency(outstanding) + '</td><td class="r">' + (loan.hasBankLoan ? formatCurrency(bankOutstanding) : "—") + '</td><td class="c">' + statusBadge(ds, t) + '</td></tr>';
+    const shgEmi = calculateShgEmi(loan);
+    const bankEmi = calculateBankEmi(loan);
+    let emiStr = t("common.pdf_monthly_installment") + ': ' + formatCurrency(shgEmi);
+    if (loan.hasBankLoan) emiStr += '<br/>Bank ' + t("common.pdf_monthly_installment") + ': ' + formatCurrency(bankEmi);
+
+    const row = '<tr><td class="c">' + srNo + '</td><td>' + (member?.name || "—") + '</td><td>' + (member?.phoneNumber || "—") + '</td><td>' + formatDate(loan.createdAt) + '</td><td class="r">' + formatCurrency(loan.amount) + '</td><td class="r">' + (loan.hasBankLoan ? formatCurrency(loan.bankLoanAmount) : "—") + '</td><td class="c">' + (loan.interest || 0) + '% <br/> ' + (loan.duration || "—") + ' mo<br/><span style="font-size: 8px;">' + emiStr + '</span></td><td class="r">' + formatCurrency(repaid) + '</td><td class="r">' + (loan.hasBankLoan ? formatCurrency(bankRepaid) : "—") + '</td><td class="r">' + formatCurrency(outstanding) + '</td><td class="r">' + (loan.hasBankLoan ? formatCurrency(bankOutstanding) : "—") + '</td><td class="c">' + statusBadge(ds, t) + '</td></tr>';
 
     if (ds === "Completed") completedRows += row;
     else if (ds === "Active") activeRows += row;
@@ -561,7 +566,12 @@ export async function generateMemberStatement({ group, president, groupMembers, 
     let ds = loan.status;
     if (loan.status === "approved") ds = outstanding <= 0 ? "Completed" : "Active";
     const remark = loan.rejectionReason ? '<span style="color:#dc2626;font-size:8px;">' + loan.rejectionReason + '</span>' : "—";
-    loanRows += '<tr><td class="c">' + srNo++ + '</td><td>' + formatDate(loan.createdAt) + '</td><td class="r">' + formatCurrency(loan.amount) + '</td><td class="c">' + (loan.interest || 0) + '%</td><td class="c">' + (loan.duration || "—") + ' mo</td><td class="r">' + formatCurrency(repaid) + '</td><td class="r">' + formatCurrency(outstanding) + '</td><td class="c">' + statusBadge(ds, t) + '</td><td>' + remark + '</td></tr>';
+    const shgEmi = calculateShgEmi(loan);
+    const bankEmi = calculateBankEmi(loan);
+    let emiStr = t("common.pdf_monthly_installment") + ': ' + formatCurrency(shgEmi) + '/mo';
+    if (loan.hasBankLoan) emiStr += '<br/>Bank ' + t("common.pdf_monthly_installment") + ': ' + formatCurrency(bankEmi) + '/mo';
+
+    loanRows += '<tr><td class="c">' + srNo++ + '</td><td>' + formatDate(loan.createdAt) + '</td><td class="r">' + formatCurrency(loan.amount) + '</td><td class="c">' + (loan.interest || 0) + '%</td><td class="c">' + (loan.duration || "—") + ' mo<br/><span style="font-size: 8px;">' + emiStr + '</span></td><td class="r">' + formatCurrency(repaid) + '</td><td class="r">' + formatCurrency(outstanding) + '</td><td class="c">' + statusBadge(ds, t) + '</td><td>' + remark + '</td></tr>';
   });
   if (!loanRows) loanRows = '<tr class="empty-row"><td colspan="9">' + t("common.pdf_empty_row") + '</td></tr>';
 

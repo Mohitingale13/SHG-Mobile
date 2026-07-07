@@ -29,6 +29,7 @@ export interface Payment {
   memberId: string;
   memberName: string;
   amount: number;
+  expectedAmount?: number;
   date: string;
   mode: PaymentMode;
   status: PaymentStatus;

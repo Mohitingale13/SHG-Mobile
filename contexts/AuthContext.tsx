@@ -183,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setGroup(null);
     // On logout, reset to app default language
-    syncLanguageRef.current("en" as Language);
+    setLanguageRef.current("en" as Language);
   }, []);
 
   // ── Verify password ────────────────────────────────────────────────────────

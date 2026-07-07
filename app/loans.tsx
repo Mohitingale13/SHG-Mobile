@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData, Loan } from "@/contexts/DataContext";
+import { calculateShgEmi, calculateBankEmi } from "@/shared/accounting";
 import Colors from "@/constants/colors";
 import FilterPicker from "@/components/FilterPicker";
 
@@ -24,6 +25,9 @@ function statusColor(status: Loan["status"]): string {
 function LoanItem({ loan }: { loan: Loan }) {
   const { t } = useLanguage();
   const color = statusColor(loan.status);
+  const shgEmi = calculateShgEmi(loan);
+  const bankEmi = calculateBankEmi(loan);
+  const totalEmi = shgEmi + bankEmi;
 
   return (
     <Pressable
@@ -55,6 +59,10 @@ function LoanItem({ loan }: { loan: Loan }) {
         <View style={styles.loanDetail}>
           <Text style={styles.detailLabel}>{t("interest")}</Text>
           <Text style={styles.detailValue}>{loan.interest}%</Text>
+        </View>
+        <View style={styles.loanDetail}>
+          <Text style={styles.detailLabel}>{t("monthly_installment")}</Text>
+          <Text style={styles.detailValue}>Rs. {totalEmi.toLocaleString("en-IN")}</Text>
         </View>
         <View style={styles.loanDetail}>
           <Text style={styles.detailLabel}>{t("remaining")}</Text>

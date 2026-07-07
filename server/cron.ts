@@ -43,14 +43,19 @@ async function generateMonthlyPayments() {
     const activeMembers = members.filter(m => m.status === "active");
     
     for (const member of activeMembers) {
-      const joinDate = new Date(member.joinDate || group.createdAt);
+      let fallbackDate = member.joinDate || group.createdAt || new Date();
+      const joinDate = new Date(fallbackDate);
       
       let iterMonth: Date;
-      if (member.contributionStartMonth) {
+      if (member.contributionStartMonth && member.contributionStartMonth.includes('-')) {
         const [y, m] = member.contributionStartMonth.split('-');
         iterMonth = new Date(parseInt(y), parseInt(m) - 1, 1);
       } else {
-        iterMonth = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1);
+        iterMonth = new Date(joinDate.getFullYear() || new Date().getFullYear(), joinDate.getMonth() || new Date().getMonth(), 1);
+      }
+      
+      if (isNaN(iterMonth.getTime())) {
+        iterMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       }
       
       const memberPayments = await storage.getPaymentsForMember(group.groupId, member.id);
@@ -62,7 +67,11 @@ async function generateMonthlyPayments() {
         const monthStr = `${iterMonth.getFullYear()}-${String(iterMonth.getMonth() + 1).padStart(2, "0")}`;
         
         if (!existingMonths.has(monthStr)) {
-          let dueDate = new Date(iterMonth.getFullYear(), iterMonth.getMonth(), settings.contributionDueDay);
+          let dueDay = settings.contributionDueDay || 1;
+          let dueDate = new Date(iterMonth.getFullYear(), iterMonth.getMonth(), dueDay);
+          if (isNaN(dueDate.getTime())) {
+            dueDate = new Date(iterMonth.getFullYear(), iterMonth.getMonth(), 1);
+          }
           const dueDateStr = dueDate.toISOString().split("T")[0];
           
           await storage.createPayment({

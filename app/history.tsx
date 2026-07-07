@@ -91,7 +91,11 @@ export default function HistoryScreen() {
           )}
         </View>
         <View style={{ alignItems: "flex-end" }}>
-          <Text style={styles.historyAmount}>Rs. {item.amount}</Text>
+          <Text style={styles.historyAmount}>
+            {item.status === "payment_not_received"
+              ? `${t("due")}: Rs. ${item.expectedAmount || 0}`
+              : `Rs. ${item.amount}`}
+          </Text>
           <View style={[styles.statusPill, { backgroundColor: statusColor + "15" }]}>
             <Text style={[styles.statusPillText, { color: statusColor }]}>{t(item.status)}</Text>
           </View>

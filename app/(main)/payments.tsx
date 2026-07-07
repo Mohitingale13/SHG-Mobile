@@ -79,8 +79,13 @@ function PaymentItem({
           </Text>
         </View>
         <View style={{ alignItems: "flex-end", gap: 4 }}>
-          <Text style={styles.paymentAmount}>Rs. {payment.amount.toLocaleString("en-IN")}</Text>
-          <ModeBadge mode={payment.mode} />
+          <Text style={styles.paymentAmount}>
+            {payment.status === "payment_not_received" 
+              ? `${t("due")}: Rs. ${(payment.expectedAmount || 0).toLocaleString("en-IN")}`
+              : `Rs. ${payment.amount.toLocaleString("en-IN")}`
+            }
+          </Text>
+          {payment.status !== "payment_not_received" && <ModeBadge mode={payment.mode} />}
           <Text style={[styles.paymentStatus, { color: statusColor }]}>
             {t(payment.status)}
           </Text>

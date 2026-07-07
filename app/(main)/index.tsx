@@ -305,7 +305,7 @@ export default function DashboardScreen() {
       date: p.date,
       title: p.memberName,
       subtitle: formatDate(p.date),
-      amount: "Rs. " + p.amount,
+      amount: p.status === "payment_not_received" ? `${t("due")}: Rs. ${p.expectedAmount || 0}` : "Rs. " + p.amount,
       statusColor: p.status === "confirmed" ? Colors.light.success : p.status === "pending" ? Colors.light.pending : Colors.light.danger,
       statusLabel: t(p.status),
       icon: "wallet",

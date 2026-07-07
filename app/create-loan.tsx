@@ -98,7 +98,7 @@ export default function CreateLoanScreen() {
     }
     setShowPasswordModal(false);
     setLoading(true);
-    
+
     const payload: any = { amount: numAmount, duration: numDuration };
 
     const error = await requestLoan(payload);
@@ -218,10 +218,10 @@ export default function CreateLoanScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <Ionicons name="calculator" size={18} color={Colors.light.primary} />
                 <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 15, color: Colors.light.text }}>
-                  {t("auto.repayment_summary")}
+                  {t("Repayment Summary")}
                 </Text>
               </View>
-              
+
               <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
                 <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.textSecondary }}>
                   {t("loanAmount")}
@@ -230,19 +230,19 @@ export default function CreateLoanScreen() {
                   Rs. {Number(amount).toLocaleString('en-IN')}
                 </Text>
               </View>
-              
+
               <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: Colors.light.border }}>
                 <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.textSecondary }}>
-                  {t("interest")} ({groupSettings?.interestRate || 2}% {t("auto.per_month")})
+                  {t("interest")} ({groupSettings?.interestRate || 2}% {t("Per month")})
                 </Text>
                 <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 14, color: Colors.light.text }}>
                   + Rs. {Math.round(Number(amount) * (groupSettings?.interestRate || 2) / 100 * Number(duration)).toLocaleString('en-IN')}
                 </Text>
               </View>
-              
+
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 15, color: Colors.light.text }}>
-                  {t("auto.total_amount_to_return")}
+                  {t("Total amount to Return")}
                 </Text>
                 <Text style={{ fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.light.primary }}>
                   Rs. {(Number(amount) + Math.round(Number(amount) * (groupSettings?.interestRate || 2) / 100 * Number(duration))).toLocaleString('en-IN')}
