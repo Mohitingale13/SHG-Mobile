@@ -1079,6 +1079,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!loan || loan.groupId !== req.currentUser!.groupId) {
         return res.status(404).json({ error: "Loan not found" });
       }
+      if (req.currentUser!.role !== "president" && req.currentUser!.role !== "treasurer" && loan.memberId !== req.currentUser!.id) {
+        return res.status(403).json({ error: "You are not authorized to view this loan." });
+      }
       const repayments = await storage.getRepaymentsByLoanId(loanId);
       return res.json(repayments);
     },
@@ -1093,6 +1096,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!loan || loan.groupId !== req.currentUser!.groupId) {
         return res.status(404).json({ error: "Loan not found" });
       }
+      if (req.currentUser!.role !== "president" && req.currentUser!.role !== "treasurer" && loan.memberId !== req.currentUser!.id) {
+        return res.status(403).json({ error: "You are not authorized to view this loan." });
+      }
       const ledger = await storage.getLoanLedger(loanId);
       return res.json(ledger);
     },
@@ -1106,7 +1112,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.currentUser!.groupId !== groupId) {
         return res.status(403).json({ error: "Access denied" });
       }
-      const ledger = await storage.getLoanLedgerByGroupId(groupId);
+      let ledger = await storage.getLoanLedgerByGroupId(groupId);
+      if (req.currentUser!.role !== "president" && req.currentUser!.role !== "treasurer") {
+         const userLoans = await storage.getLoansForMember(groupId, req.currentUser!.id);
+         const userLoanIds = userLoans.map(l => l.id);
+         ledger = ledger.filter(l => userLoanIds.includes(l.loanId));
+      }
       return res.json(ledger);
     },
   );
@@ -1114,7 +1125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/loans/:loanId/repayments",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { loanId } = req.params;
       const { amount, shgAmount, bankAmount, remarks } = req.body;
@@ -1272,7 +1283,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const repayments = await storage.getRepaymentsByGroupId(groupId);
+      let repayments = await storage.getRepaymentsByGroupId(groupId);
+      if (req.currentUser!.role !== "president" && req.currentUser!.role !== "treasurer") {
+         const userLoans = await storage.getLoansForMember(groupId, req.currentUser!.id);
+         const userLoanIds = userLoans.map(l => l.id);
+         repayments = repayments.filter(r => userLoanIds.includes(r.loanId));
+      }
       return res.json(repayments);
     },
   );

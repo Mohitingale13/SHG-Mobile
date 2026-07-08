@@ -34,6 +34,19 @@ export default function MemberDetailScreen() {
     );
   }
 
+
+  const isAuthorized = isPresident || user?.role === "treasurer" || user?.id === member.id;
+  
+  if (!isAuthorized) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center", padding: 20 }]}>
+        <Ionicons name="lock-closed-outline" size={64} color={Colors.light.danger} />
+        <Text style={[styles.emptyText, { marginTop: 16, color: Colors.light.danger, fontSize: 18, fontWeight: 'bold', textAlign: 'center' }]}>{t("access_denied")}</Text>
+        <Text style={{ marginTop: 8, color: Colors.light.textSecondary, textAlign: 'center' }}>{t("loan_privacy_notice")}</Text>
+      </View>
+    );
+  }
+
   const canDownload = isPresident || user?.id === member.id;
 
   const memberPayments = payments.filter((p) => p.memberId === member.id);

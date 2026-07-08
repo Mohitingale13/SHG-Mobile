@@ -61,9 +61,10 @@ export default function LoanDetailScreen() {
 
   if (!loan) {
     return (
-      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <Ionicons name="alert-circle-outline" size={48} color={Colors.light.textMuted} />
-        <Text style={styles.emptyText}>{t("auto.loan_not_found")}</Text>
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center", padding: 20 }]}>
+        <Ionicons name="lock-closed-outline" size={64} color={Colors.light.danger} />
+        <Text style={[styles.emptyText, { marginTop: 16, color: Colors.light.danger, fontSize: 18, fontWeight: 'bold', textAlign: 'center' }]}>{t("unauthorized_loan_view")}</Text>
+        <Text style={{ marginTop: 8, color: Colors.light.textSecondary, textAlign: 'center' }}>{t("loan_privacy_notice")}</Text>
       </View>
     );
   }

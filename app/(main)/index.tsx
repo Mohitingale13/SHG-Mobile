@@ -40,29 +40,17 @@ export default function DashboardScreen() {
     const checkDismissals = async () => {
       const now = new Date();
       const currentMonthStr = `${now.getFullYear()}-${now.getMonth()}`;
+      const currentDayStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
       try {
         const s = await AsyncStorage.getItem(`dismissed_savings_${currentMonthStr}`);
         if (s) setDismissedSavings(true);
-        const l = await AsyncStorage.getItem(`dismissed_loan_${currentMonthStr}`);
-        if (l) setDismissedLoan(true);
+        // We will check loan dismissal in a separate effect because it depends on loanReminder amount
       } catch (e) {}
     };
     checkDismissals();
   }, []);
 
-  const dismissSavingsCard = async () => {
-    setDismissedSavings(true);
-    const now = new Date();
-    const currentMonthStr = `${now.getFullYear()}-${now.getMonth()}`;
-    await AsyncStorage.setItem(`dismissed_savings_${currentMonthStr}`, "true").catch(()=>{});
-  };
 
-  const dismissLoanCard = async () => {
-    setDismissedLoan(true);
-    const now = new Date();
-    const currentMonthStr = `${now.getFullYear()}-${now.getMonth()}`;
-    await AsyncStorage.setItem(`dismissed_loan_${currentMonthStr}`, "true").catch(()=>{});
-  };
 
 
   const [micState, setMicState] = useState<MicState>("idle");
@@ -344,6 +332,36 @@ export default function DashboardScreen() {
     }
   }, [loans, user, isPresident, isTreasurer]);
 
+  useEffect(() => {
+    const checkLoanDismissal = async () => {
+      if (!loanReminder) return;
+      const now = new Date();
+      const currentDayStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+      const recAmount = loanReminder.type === 'single' ? loanReminder.recommendedPayment : loanReminder.totalRecommended;
+      try {
+        const l = await AsyncStorage.getItem(`dismissed_loan_${currentDayStr}_${recAmount}`);
+        setDismissedLoan(!!l);
+      } catch (e) {}
+    };
+    checkLoanDismissal();
+  }, [loanReminder]);
+
+  const dismissSavingsCard = async () => {
+    setDismissedSavings(true);
+    const now = new Date();
+    const currentMonthStr = `${now.getFullYear()}-${now.getMonth()}`;
+    await AsyncStorage.setItem(`dismissed_savings_${currentMonthStr}`, "true").catch(()=>{});
+  };
+
+  const dismissLoanCard = async () => {
+    if (!loanReminder) return;
+    setDismissedLoan(true);
+    const now = new Date();
+    const currentDayStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+    const recAmount = loanReminder.type === 'single' ? loanReminder.recommendedPayment : loanReminder.totalRecommended;
+    await AsyncStorage.setItem(`dismissed_loan_${currentDayStr}_${recAmount}`, "true").catch(()=>{});
+  };
+
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -363,11 +381,10 @@ export default function DashboardScreen() {
     routeTo?: { pathname: string; params?: Record<string, string> };
   };
 
-  const myPayments = isPresident ? payments : payments.filter((p) => p.memberId === user?.id);
-  const myLoans = isPresident ? loans : loans.filter((l) => l.memberId === user?.id);
-
+  // The public activity feed displays group savings and meetings to ALL members for transparency.
+  // Loan activity is intentionally excluded to maintain member privacy.
   const recentActivity: ActivityItem[] = [
-    ...myPayments.map((p): ActivityItem => ({
+    ...payments.map((p): ActivityItem => ({
       id: "p_" + p.id,
       type: "payment",
       date: p.date,
@@ -377,18 +394,6 @@ export default function DashboardScreen() {
       statusColor: p.status === "confirmed" ? Colors.light.success : p.status === "pending" ? Colors.light.pending : Colors.light.danger,
       statusLabel: t(p.status),
       icon: "wallet",
-    })),
-    ...myLoans.map((l): ActivityItem => ({
-      id: "l_" + l.id,
-      type: "loan",
-      date: l.createdAt,
-      title: l.memberName,
-      subtitle: formatDate(l.createdAt),
-      amount: "Rs. " + l.amount,
-      statusColor: l.status === "approved" ? Colors.light.success : (l.status === "rejected" || l.status === "treasurer_rejected") ? Colors.light.danger : l.status === "pending_treasurer" ? "#D97706" : Colors.light.pending,
-      statusLabel: t(l.status),
-      icon: "cash",
-      routeTo: { pathname: "/loan/[id]", params: { id: l.id } },
     })),
     ...meetings.slice().reverse().map((m): ActivityItem => ({
       id: "m_" + m.id,
