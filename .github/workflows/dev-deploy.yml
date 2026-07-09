@@ -40,7 +40,7 @@ jobs:
       - name: Build Express Server
         run: npm run server:build
         env:
-          NODE_ENV: productionn
+          NODE_ENV: production
 
       - name: Configure SSH
         run: |
