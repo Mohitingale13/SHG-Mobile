@@ -155,18 +155,29 @@ The platform features a native **Voice Assistant** to help users navigate comple
 
 ## 7. Reports
 
-The application provides extensive reporting capabilities exportable as fully localized PDFs with robust language dictionary mapping.
+The application provides 11 extensive reporting capabilities exportable as fully localized PDFs with robust language dictionary mapping. The UI is organized into three distinct, collapsible accordions for ease of use:
 
-- **Savings Report**: Breakdown of member contributions, late fees, and totals.
-- **Loan Report**: Comprehensive list of loans explicitly sectioned into **Active Loans** and **Completed Loans** with principal and interest breakdowns.
-- **Financial Summary Report**: High-level group metrics, including exact Current Balance.
-- **Member Register Report**: Detailed roster including Contribution Status, Pending Months, Active Loans, and Total Contributions.
+- **Standard SHG Registers**:
+  - **Cash Book**: Running physical cash balance tracking.
+  - **Bank Book**: Running bank balance tracking.
+  - **SHG Financial Report**: Overall financial position (Income, Expenses, Assets, Liabilities).
 
-**Filters Available:**
-- Monthly & Yearly
-- Custom Date Range
-- All Time
-- Active Loans vs Completed Loans
+- **Operational Ledgers**:
+  - **Monthly Savings Report**: Breakdown of member contributions and late fees.
+  - **Internal Loan Register**: Record of internal SHG loans and recovery metrics.
+  - **Group Bank Loan Register**: Record of external bank loans and member allocations.
+  - **Loan Recovery Report**: Monthly monitoring of internal and bank loan recoveries.
+
+- **Administrative Registers**:
+  - **Member Passbook**: Individual member's combined savings and loan passbooks.
+  - **Member Register**: Master roster of all active and former members.
+  - **Meeting Register**: Log of scheduled and completed SHG meetings.
+  - **Annual SHG Report**: Comprehensive year-end statistical report for auditing.
+
+**Dynamic Filtering:**
+- Clean, standard UI dropdowns for Custom Time Ranges (Monthly, Quarterly, Half-Yearly, Annual, Custom Dates).
+- Report-specific filters (e.g., Payment Method, Loan Status, Select Member).
+- Automatic PDF generation directly matching applied filters and current language (Marathi or English).
 
 ---
 
