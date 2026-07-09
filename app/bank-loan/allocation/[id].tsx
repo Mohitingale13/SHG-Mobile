@@ -32,8 +32,7 @@ export default function BankLoanAllocationScreen() {
   const [showRepayModal, setShowRepayModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [repayAmount, setRepayAmount] = useState("");
-  const [repayDate, setRepayDate] = useState(new Date().toISOString().split("T")[0]);
-  const [repayRemarks, setRepayRemarks] = useState("");
+    const [repayRemarks, setRepayRemarks] = useState("");
   const [recording, setRecording] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
 
@@ -114,7 +113,6 @@ export default function BankLoanAllocationScreen() {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await recordBankLoanRepayment(allocation.id, {
         amount: amt,
-        date: repayDate,
         remarks: repayRemarks,
       });
       setShowRepayModal(false);
@@ -292,13 +290,13 @@ export default function BankLoanAllocationScreen() {
                 <View style={[styles.tableRow, styles.tableHeader]}>
                   <Text style={[styles.tableCell, styles.tableHeaderText, { width: 90 }]}>{t("bank_loan.date")}</Text>
                   <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("bank_loan.receipt_no")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 100 }]}>{t("bank_loan.particulars")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 90 }]}>{t("bank_loan.opening_principal")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 80 }]}>{t("bank_loan.interest_charged")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 80 }]}>{t("bank_loan.col_principal")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 80 }]}>{t("bank_loan.total_payment")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 90 }]}>{t("bank_loan.closing_principal")}</Text>
-                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 80 }]}>{t("bank_loan.outstanding_interest")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 130 }]}>{t("bank_loan.particulars")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("bank_loan.opening_principal")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("bank_loan.interest_charged")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("bank_loan.col_principal")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("bank_loan.total_payment")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("bank_loan.closing_principal")}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderText, { width: 130 }]}>{t("bank_loan.outstanding_interest")}</Text>
                 </View>
 
                 {/* Table Rows */}
@@ -308,28 +306,28 @@ export default function BankLoanAllocationScreen() {
                     <View key={entry.id || idx} style={[styles.tableRow, isDisbursement && styles.disbursementRow, idx % 2 === 1 && !isDisbursement && styles.altRow]}>
                       <Text style={[styles.tableCell, { width: 90 }]}>{new Date(entry.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</Text>
                       <Text style={[styles.tableCell, { width: 110, color: Colors.light.primary }]}>{entry.receiptNo}</Text>
-                      <Text style={[styles.tableCell, { width: 100, fontFamily: "Poppins_500Medium" }]}>
+                      <Text style={[styles.tableCell, { width: 130, fontFamily: "Poppins_500Medium" }]}>
                         {isDisbursement ? t("bank_loan.disbursement") : t("bank_loan.repayment")}
                       </Text>
-                      <Text style={[styles.tableCell, { width: 90 }]}>{entry.openingPrincipal.toLocaleString("en-IN")}</Text>
-                      <Text style={[styles.tableCell, { width: 80 }]}>{entry.interestCharged.toLocaleString("en-IN")}</Text>
-                      <Text style={[styles.tableCell, { width: 80 }]}>{entry.principalPaid.toLocaleString("en-IN")}</Text>
-                      <Text style={[styles.tableCell, { width: 80, fontFamily: "Poppins_600SemiBold" }]}>{entry.paymentReceived.toLocaleString("en-IN")}</Text>
-                      <Text style={[styles.tableCell, { width: 90, color: entry.closingPrincipal > 0 ? Colors.light.danger : Colors.light.success, fontFamily: "Poppins_600SemiBold" }]}>{entry.closingPrincipal.toLocaleString("en-IN")}</Text>
-                      <Text style={[styles.tableCell, { width: 80, color: entry.outstandingInterest > 0 ? Colors.light.danger : Colors.light.success }]}>{entry.outstandingInterest.toLocaleString("en-IN")}</Text>
+                      <Text style={[styles.tableCell, { width: 120 }]}>{entry.openingPrincipal.toLocaleString("en-IN")}</Text>
+                      <Text style={[styles.tableCell, { width: 110 }]}>{entry.interestCharged.toLocaleString("en-IN")}</Text>
+                      <Text style={[styles.tableCell, { width: 110 }]}>{entry.principalPaid.toLocaleString("en-IN")}</Text>
+                      <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_600SemiBold" }]}>{entry.paymentReceived.toLocaleString("en-IN")}</Text>
+                      <Text style={[styles.tableCell, { width: 120, color: entry.closingPrincipal > 0 ? Colors.light.danger : Colors.light.success, fontFamily: "Poppins_600SemiBold" }]}>{entry.closingPrincipal.toLocaleString("en-IN")}</Text>
+                      <Text style={[styles.tableCell, { width: 130, color: entry.outstandingInterest > 0 ? Colors.light.danger : Colors.light.success }]}>{entry.outstandingInterest.toLocaleString("en-IN")}</Text>
                     </View>
                   );
                 })}
 
                 {/* Footer Totals */}
                 <View style={[styles.tableRow, styles.tableFooter]}>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 90 + 110 + 100 }]}>{t("bank_loan.total")}</Text>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 90 }]}>—</Text>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 80 }]}>{ledger.filter(e => e.type !== "disbursement").reduce((s, e) => s + e.interestCharged, 0).toLocaleString("en-IN")}</Text>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 80 }]}>{allocation.totalPrincipalPaid.toLocaleString("en-IN")}</Text>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 80 }]}>{(allocation.totalPrincipalPaid + allocation.totalInterestPaid).toLocaleString("en-IN")}</Text>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 90 }]}>{allocation.outstandingBalance.toLocaleString("en-IN")}</Text>
-                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 80 }]}>{allocation.outstandingInterest.toLocaleString("en-IN")}</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 90 + 110 + 130 }]}>{t("bank_loan.total")}</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 120 }]}>—</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 110 }]}>{ledger.filter(e => e.type !== "disbursement").reduce((s, e) => s + e.interestCharged, 0).toLocaleString("en-IN")}</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 110 }]}>{allocation.totalPrincipalPaid.toLocaleString("en-IN")}</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 110 }]}>{(allocation.totalPrincipalPaid + allocation.totalInterestPaid).toLocaleString("en-IN")}</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 120 }]}>{allocation.outstandingBalance.toLocaleString("en-IN")}</Text>
+                  <Text style={[styles.tableCell, styles.tableFooterText, { width: 130 }]}>{allocation.outstandingInterest.toLocaleString("en-IN")}</Text>
                 </View>
               </View>
             </ScrollView>
@@ -361,15 +359,7 @@ export default function BankLoanAllocationScreen() {
                 onChangeText={setRepayAmount}
               />
             </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>{t("bank_loan.payment_date")}</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="YYYY-MM-DD"
-                value={repayDate}
-                onChangeText={setRepayDate}
-              />
-            </View>
+            
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>{t("bank_loan.remarks")}</Text>
               <TextInput

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useMemo, ReactNode, useCallback, useEffect } from "react";
 import { useAuth } from "./AuthContext";
+import { getDeviceTimestamp } from '@/lib/time';
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from "@/lib/api";
 import { resolveRepaymentAmounts, calculateShgTotal } from "../shared/accounting";
 
@@ -367,7 +368,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [user?.groupId]);
 
   const updateMeeting = useCallback(async (id: string, data: Partial<Meeting>) => {
-    const updated = await apiPatch<Meeting>(`/api/meetings/${id}`, data);
+    const updated = await apiPatch<Meeting>(`/api/meetings/${id}`, { ...data, deviceTime: getDeviceTimestamp() });
     setMeetings((prev) => prev.map((m) => (m.id === id ? updated : m)));
   }, []);
 
@@ -574,7 +575,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
   
   const recordBankLoanRepayment = async (allocationId: string, data: {amount: number; date?: string; remarks?: string}) => {
-    const response = await apiPost<{ repayment: any; allocation: BankLoanAllocation }>(`/api/bank-loan-allocations/${allocationId}/repayments`, data);
+    const response = await apiPost<{ repayment: any; allocation: BankLoanAllocation }>(`/api/bank-loan-allocations/${allocationId}/repayments`, { ...data, deviceTime: getDeviceTimestamp() });
     if (response.allocation) {
       setBankLoanAllocations((prev) => prev.map(a => a.id === allocationId ? response.allocation : a));
     }

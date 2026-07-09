@@ -67,6 +67,14 @@ export function requireSameGroup(
   next();
 }
 
+function now(req: any) {
+  if (req.body && req.body.deviceTime) {
+    const d = new Date(req.body.deviceTime);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // ─── SUPER ADMIN & INVITATIONS ──────────────────────────────────────────────
   registerSuperAdminRoutes(app);
@@ -108,7 +116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         phone,
         password,
         village,
-        joinDate: joinDate ? new Date(joinDate) : new Date(),
+        joinDate: joinDate ? new Date(joinDate) : now(req),
         exitDate: exitDate ? new Date(exitDate) : undefined,
         role: "president",
         groupId: existingGroup.groupId,
@@ -158,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         phone,
         password,
         village,
-        joinDate: joinDate ? new Date(joinDate) : new Date(),
+        joinDate: joinDate ? new Date(joinDate) : now(req),
         exitDate: exitDate ? new Date(exitDate) : undefined,
         role: "member",
         groupId: group.groupId,
@@ -426,7 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: req.currentUser!.id,
         notes: "",
         status: "scheduled",
-        createdAt: new Date(),
+        createdAt: now(req),
       });
       return res.status(201).json(meeting);
     },
@@ -518,7 +526,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expectedAmount: 0,
         lateFee: 0,
         month: "",
-        date: new Date(),
+        date: now(req),
         mode: paymentMode,
         status: paymentMode === "online" ? "pending_verification" : "pending",
       });
@@ -570,22 +578,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (isOverride) {
         updateData.overriddenBy = user.id;
-        updateData.overrideAt = new Date();
+        updateData.overrideAt = now(req);
         if (reason) updateData.overrideReason = reason;
       } else {
         updateData.verifiedBy = user.id;
-        updateData.verifiedAt = new Date();
+        updateData.verifiedAt = now(req);
         
         if (status === "rejected" || status === "payment_not_received") {
           if (reason) updateData.rejectionReason = reason;
           updateData.rejectedBy = user.id;
-          updateData.rejectedAt = new Date();
+          updateData.rejectedAt = now(req);
         }
       }
 
       if (status === "confirmed") {
         updateData.verifiedBy = user.id;
-        updateData.verifiedAt = new Date();
+        updateData.verifiedAt = now(req);
       }
 
       // If verifying, ensure amount is set correctly (expected + late fee)
@@ -714,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: notes?.trim() || undefined,
         isActive: true,
         createdBy: req.currentUser!.id,
-        createdAt: new Date().toISOString(),
+        createdAt: now(req).toISOString(),
       });
       return res.status(201).json(bank);
     },
@@ -829,7 +837,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         interest: rate,
         duration: dur,
         status: initialStatus,
-        createdAt: new Date(),
+        createdAt: now(req),
         hasBankLoan: false,
         bankId: undefined,
         bankName: undefined,
@@ -866,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData: any = {
         status: "pending_president",
         treasurerActionBy: user.id,
-        treasurerActionAt: new Date(),
+        treasurerActionAt: now(req),
       };
       
       if (req.body.hasBankLoan) {
@@ -916,11 +924,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData: any = {
         status: "treasurer_rejected",
         treasurerActionBy: user.id,
-        treasurerActionAt: new Date(),
+        treasurerActionAt: now(req),
       };
       if (reason) updateData.rejectionReason = reason;
       updateData.rejectedBy = user.id;
-      updateData.rejectedAt = new Date();
+      updateData.rejectedAt = now(req);
 
       const updated = await storage.updateLoan(loanId, updateData);
       return res.json(updated);
@@ -951,7 +959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resolutionNo: resolutionNo || "",
         meetingId,
         approvedBy: req.currentUser!.id,
-        approvedAt: new Date(),
+        approvedAt: now(req),
       };
 
       if (loan.calculationMethod === "reducing_balance") {
@@ -960,7 +968,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (isOverride) {
         updateData.presidentOverride = true;
-        updateData.overrideAt = new Date();
+        updateData.overrideAt = now(req);
         updateData.overrideReason = "Approved directly by President";
       }
 
@@ -1007,7 +1015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           paymentReceived: 0,
           closingPrincipal: updated.amount,
           outstandingInterest: 0,
-          date: new Date(),
+          date: now(req),
           type: "disbursement",
           recordedBy: req.currentUser!.id
         });
@@ -1039,7 +1047,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData: any = {
         status: "rejected",
         approvedBy: req.currentUser!.id,
-        approvedAt: new Date(),
+        approvedAt: now(req),
         rejectedBy: req.currentUser!.id,
         rejectedAt: new Date(),
       };
@@ -1047,7 +1055,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (isOverride) {
         updateData.presidentOverride = true;
-        updateData.overrideAt = new Date();
+        updateData.overrideAt = now(req);
         updateData.overrideReason = "Rejected directly by President";
       }
 
@@ -1157,47 +1165,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Find how many months have elapsed since last payment, or since approval
         // A simple approach is just charging 1 month of interest every repayment.
         // Or strictly time-based. For now, the accounting function assumes 1 period.
-        const fixedInstallment = loan.fixedPrincipalInstallment || Math.floor(loan.amount / loan.duration);
-        const ledger = calculateNextLedgerEntry(
-          { remainingBalance: loan.remainingBalance, outstandingInterest: loan.outstandingInterest || 0 },
-          shg,
-          loan.interest,
-          fixedInstallment,
-          policy
-        );
-
-        repayment = await storage.recordLoanRepayment(
+        const result = await storage.recordLoanRepayment(
+          loanId,
           {
-            loanId,
             amount: shg + bank,
             shgAmount: shg,
             bankAmount: bank,
-            date: new Date().toISOString(),
+            date: now(req).toISOString(),
             recordedBy: req.currentUser!.id,
             remarks: remarks?.trim() || undefined,
           },
-          {
-            loanId,
-            receiptNo: `REP-${loanId.substring(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`,
-            openingPrincipal: ledger.openingPrincipal,
-            interestRateApplied: loan.interest,
-            interestCharged: ledger.interestCharged,
-            interestPaid: ledger.interestPaid,
-            principalPaid: ledger.principalPaid,
-            paymentReceived: ledger.paymentReceived,
-            closingPrincipal: ledger.closingPrincipal,
-            outstandingInterest: ledger.outstandingInterest,
-            date: new Date(),
-            type: "repayment",
-            recordedBy: req.currentUser!.id
-          },
-          {
-            remainingBalance: ledger.closingPrincipal,
-            outstandingInterest: ledger.outstandingInterest,
-            totalPrincipalPaid: (loan.totalPrincipalPaid || 0) + ledger.principalPaid,
-            totalInterestPaid: (loan.totalInterestPaid || 0) + ledger.interestPaid,
-          }
+          policy
         );
+        repayment = result.repayment;
       } else {
         // Legacy flat interest logic
         repayment = await storage.createRepayment({
@@ -1205,7 +1185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           amount: shg + bank,
           shgAmount: shg,
           bankAmount: bank,
-          date: new Date(),
+          date: now(req),
           recordedBy: req.currentUser!.id,
           remarks: remarks?.trim() || undefined,
         });
@@ -1636,7 +1616,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
         const ledger = {
           receiptNo: disbReceiptNo,
           type: "disbursement",
-          date: bankLoan.sanctionDate ? new Date(bankLoan.sanctionDate) : new Date(),
+          date: bankLoan.sanctionDate ? new Date(bankLoan.sanctionDate) : now(req),
           openingPrincipal: 0,
           interestRateApplied: bankLoan.annualInterestRate,
           interestCharged: 0,
@@ -1772,7 +1752,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
           allocationId,
           receiptNo,
           type: "repayment",
-          date: date ? new Date(date) : new Date(),
+          date: date ? new Date(date) : now(req),
           openingPrincipal: ledgerResult.openingPrincipal,
           interestRateApplied: bankLoan.annualInterestRate,
           interestCharged: ledgerResult.interestCharged,

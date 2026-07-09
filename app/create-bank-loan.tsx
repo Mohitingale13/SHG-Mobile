@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
+import SHGDatePicker from '@/components/SHGDatePicker';
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
 import Colors from "@/constants/colors";
@@ -144,11 +145,11 @@ export default function CreateBankLoanScreen() {
         <View style={styles.row}>
           <View style={[styles.inputGroup, { flex: 1 }]}>
             <Text style={styles.label}>{t("sanctionDate")} *</Text>
-            <TextInput style={styles.input} placeholder="YYYY-MM-DD" value={sanctionDate} onChangeText={setSanctionDate} />
+            <SHGDatePicker mode="date" value={sanctionDate} onSelect={setSanctionDate} />
           </View>
           <View style={[styles.inputGroup, { flex: 1 }]}>
             <Text style={styles.label}>{t("bank_loan.repayment_start")}</Text>
-            <TextInput style={styles.input} placeholder="YYYY-MM-DD" value={repaymentStartDate} onChangeText={setRepaymentStartDate} />
+            <SHGDatePicker mode="date" value={repaymentStartDate} onSelect={setRepaymentStartDate} />
           </View>
         </View>
 
