@@ -41,6 +41,7 @@ export default function SHGDatePicker({
   if (isNaN(initialDate.getTime())) initialDate.setTime(Date.now());
   
   const [currentViewDate, setCurrentViewDate] = useState(initialDate);
+  const [showYearSelector, setShowYearSelector] = useState(false);
   const [rangeStart, setRangeStart] = useState<string | null>(mode === 'date-range' && value ? value.split(':')[0] : null);
   const [rangeEnd, setRangeEnd] = useState<string | null>(mode === 'date-range' && value && value.includes(':') ? value.split(':')[1] : null);
 
@@ -49,7 +50,12 @@ export default function SHGDatePicker({
 
   const handleDaySelect = (day: number) => {
     const selected = new Date(currentViewDate.getFullYear(), currentViewDate.getMonth(), day);
-    const dateStr = selected.toISOString().split('T')[0];
+    
+    // Fix timezone offset issue by formatting locally instead of using toISOString()
+    const year = selected.getFullYear();
+    const month = String(selected.getMonth() + 1).padStart(2, '0');
+    const d = String(selected.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${d}`;
 
     if (mode === 'date') {
       onSelect(dateStr);
@@ -215,38 +221,68 @@ export default function SHGDatePicker({
 
             {(mode === 'date' || mode === 'date-range') && (
               <>
-                <View style={styles.navigation}>
-                  <Pressable onPress={() => { const d = new Date(currentViewDate); d.setMonth(d.getMonth() - 1); setCurrentViewDate(d); }} accessibilityLabel={t('date_prev_month')}>
-                    <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
-                  </Pressable>
-                  <Text style={styles.navText}>{t(`date_${MONTHS_KEYS[currentViewDate.getMonth()]}`)} {currentViewDate.getFullYear()}</Text>
-                  <Pressable onPress={() => { const d = new Date(currentViewDate); d.setMonth(d.getMonth() + 1); setCurrentViewDate(d); }} accessibilityLabel={t('date_next_month')}>
-                    <Ionicons name="chevron-forward" size={24} color={Colors.light.text} />
-                  </Pressable>
-                </View>
-                <View style={styles.daysHeader}>
-                  {DAYS_KEYS.map(d => <Text key={d} style={styles.dayHeaderText}>{t(`date_day_${d}`) || d}</Text>)}
-                </View>
-                <View style={styles.grid}>{renderDays()}</View>
-                
-                <View style={styles.actionRow}>
-                  {mode === 'date-range' ? (
-                    <Pressable style={[styles.confirmBtn, (!rangeStart || !rangeEnd) && { opacity: 0.5 }]} disabled={!rangeStart || !rangeEnd} onPress={handleConfirmRange}>
-                      <Text style={styles.confirmBtnText}>{t('date_done') || 'Done'}</Text>
+                <View style={[styles.navigation, { marginBottom: 20 }]}>
+                  <View style={styles.monthNav}>
+                    <Pressable onPress={() => { const d = new Date(currentViewDate); d.setMonth(d.getMonth() - 1); setCurrentViewDate(d); }} accessibilityLabel={t('date_prev_month')} style={styles.navIcon}>
+                      <Ionicons name="chevron-back" size={22} color={Colors.light.text} />
                     </Pressable>
-                  ) : (
-                    <Pressable style={styles.clearBtn} onPress={() => { onSelect(''); setModalVisible(false); }}>
-                      <Text style={styles.clearBtnText}>{t('date_clear') || 'Clear'}</Text>
+                    <Text style={styles.navText}>{t(`date_${MONTHS_KEYS[currentViewDate.getMonth()]}`) || MONTHS_KEYS[currentViewDate.getMonth()]}</Text>
+                    <Pressable onPress={() => { const d = new Date(currentViewDate); d.setMonth(d.getMonth() + 1); setCurrentViewDate(d); }} accessibilityLabel={t('date_next_month')} style={styles.navIcon}>
+                      <Ionicons name="chevron-forward" size={22} color={Colors.light.text} />
                     </Pressable>
-                  )}
-                  <Pressable style={styles.todayBtn} onPress={() => {
-                    const today = new Date();
-                    setCurrentViewDate(today);
-                    if (mode === 'date') handleDaySelect(today.getDate());
-                  }}>
-                    <Text style={styles.todayBtnText}>{t('date_today') || 'Today'}</Text>
+                  </View>
+                  <Pressable style={styles.yearSelectBtn} onPress={() => setShowYearSelector(!showYearSelector)}>
+                    <Text style={styles.yearSelectText}>{currentViewDate.getFullYear()}</Text>
+                    <Ionicons name={showYearSelector ? "chevron-up" : "chevron-down"} size={16} color={Colors.light.primary} />
                   </Pressable>
                 </View>
+
+                {showYearSelector ? (
+                  <ScrollView style={{ maxHeight: 260, marginVertical: 10 }}>
+                    <View style={styles.grid}>
+                      {Array.from({ length: 50 }, (_, i) => new Date().getFullYear() - 40 + i).reverse().map(y => (
+                        <Pressable 
+                          key={y} 
+                          style={[styles.yearCell, currentViewDate.getFullYear() === y && styles.yearCellSelected]} 
+                          onPress={() => {
+                            const nd = new Date(currentViewDate);
+                            nd.setFullYear(y);
+                            setCurrentViewDate(nd);
+                            setShowYearSelector(false);
+                          }}
+                        >
+                          <Text style={[styles.yearText, currentViewDate.getFullYear() === y && { color: '#fff' }]}>{y}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                ) : (
+                  <>
+                    <View style={styles.daysHeader}>
+                      {DAYS_KEYS.map(d => <Text key={d} style={styles.dayHeaderText}>{t(`date_day_${d}`) || d}</Text>)}
+                    </View>
+                    <View style={styles.grid}>{renderDays()}</View>
+                    
+                    <View style={styles.actionRow}>
+                      {mode === 'date-range' ? (
+                        <Pressable style={[styles.confirmBtn, (!rangeStart || !rangeEnd) && { opacity: 0.5 }]} disabled={!rangeStart || !rangeEnd} onPress={handleConfirmRange}>
+                          <Text style={styles.confirmBtnText}>{t('date_done') || 'Done'}</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable style={styles.clearBtn} onPress={() => { onSelect(''); setModalVisible(false); }}>
+                          <Text style={styles.clearBtnText}>{t('date_clear') || 'Clear'}</Text>
+                        </Pressable>
+                      )}
+                      <Pressable style={styles.todayBtn} onPress={() => {
+                        const today = new Date();
+                        setCurrentViewDate(today);
+                        if (mode === 'date') handleDaySelect(today.getDate());
+                      }}>
+                        <Text style={styles.todayBtnText}>{t('date_today') || 'Today'}</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
               </>
             )}
 
@@ -319,4 +355,11 @@ const styles = StyleSheet.create({
   clearBtnText: { color: Colors.light.text, fontSize: 15, fontFamily: "Poppins_500Medium" },
   todayBtn: { backgroundColor: Colors.light.primary + '20', padding: 12, borderRadius: 12, alignItems: 'center', flex: 1, marginLeft: 8 },
   todayBtnText: { color: Colors.light.primary, fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  monthNav: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  navIcon: { padding: 5 },
+  yearSelectBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.light.primary + '15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 6 },
+  yearSelectText: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: Colors.light.primary },
+  yearCell: { width: '25%', paddingVertical: 12, alignItems: 'center' },
+  yearCellSelected: { backgroundColor: Colors.light.primary, borderRadius: 8 },
+  yearText: { fontSize: 14, fontFamily: "Poppins_500Medium", color: Colors.light.text },
 });

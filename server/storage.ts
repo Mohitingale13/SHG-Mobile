@@ -344,6 +344,37 @@ export interface IStorage {
     ledgerEntry: Omit<BankLoanLedgerEntry, "id" | "createdAt">,
     snapshotUpdate: { outstandingBalance: number; outstandingInterest: number; totalPrincipalPaid: number; totalInterestPaid: number; status?: string }
   ): Promise<BankLoanRepayment>;
+
+  // Migration Workspace
+  getMigrationWorkspace(groupId: string): Promise<schema.MigrationWizardWorkspace | undefined>;
+  createMigrationWorkspace(data: Omit<schema.MigrationWizardWorkspace, "id" | "createdAt" | "updatedAt">): Promise<schema.MigrationWizardWorkspace>;
+  updateMigrationWorkspace(id: string, data: Partial<schema.MigrationWizardWorkspace>): Promise<schema.MigrationWizardWorkspace | undefined>;
+  
+  getMigrationWizardMembers(workspaceId: string): Promise<schema.MigrationWizardMember[]>;
+  createMigrationWizardMember(data: Omit<schema.MigrationWizardMember, "id" | "createdAt">): Promise<schema.MigrationWizardMember>;
+  updateMigrationWizardMember(id: string, data: Partial<schema.MigrationWizardMember>): Promise<schema.MigrationWizardMember | undefined>;
+  deleteMigrationWizardMember(id: string): Promise<void>;
+
+  getMigrationWizardLoans(workspaceId: string): Promise<schema.MigrationWizardLoan[]>;
+  createMigrationWizardLoan(data: Omit<schema.MigrationWizardLoan, "id" | "createdAt">): Promise<schema.MigrationWizardLoan>;
+  updateMigrationWizardLoan(id: string, data: Partial<schema.MigrationWizardLoan>): Promise<schema.MigrationWizardLoan | undefined>;
+  deleteMigrationWizardLoan(id: string): Promise<void>;
+
+  getMigrationWizardBankLoans(workspaceId: string): Promise<schema.MigrationWizardBankLoan[]>;
+  createMigrationWizardBankLoan(data: Omit<schema.MigrationWizardBankLoan, "id" | "createdAt">): Promise<schema.MigrationWizardBankLoan>;
+  updateMigrationWizardBankLoan(id: string, data: Partial<schema.MigrationWizardBankLoan>): Promise<schema.MigrationWizardBankLoan | undefined>;
+  deleteMigrationWizardBankLoan(id: string): Promise<void>;
+
+  // Migration Finalization
+  completeMigrationTransaction(
+    groupId: string,
+    workspaceId: string,
+    snapshot: any,
+    members: any[],
+    internalLoans: any[],
+    bankLoans: any[],
+    completionRecord: Omit<schema.MigrationCompletionRecord, "id" | "completedAt">
+  ): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -569,7 +600,8 @@ export class MemStorage implements IStorage {
   }
 
   async getGroupSettings(groupId: string): Promise<GroupSettings> {
-    return this.groupSettings.get(groupId) ?? { ...DEFAULT_SETTINGS };
+    const settings = this.groupSettings.get(groupId);
+    return settings ? { ...DEFAULT_SETTINGS, ...settings } : { ...DEFAULT_SETTINGS };
   }
 
   async updateGroupSettings(groupId: string, settings: GroupSettings): Promise<void> {
@@ -610,6 +642,104 @@ export class MemStorage implements IStorage {
   }
   async deleteBank(id: string): Promise<void> {
     this.banks.delete(id);
+  }
+
+  private migrationWorkspaces = new Map<string, schema.MigrationWizardWorkspace>();
+  private migrationMembers = new Map<string, schema.MigrationWizardMember>();
+  private migrationLoans = new Map<string, schema.MigrationWizardLoan>();
+  private migrationBankLoans = new Map<string, schema.MigrationWizardBankLoan>();
+
+  async getMigrationWorkspace(groupId: string): Promise<schema.MigrationWizardWorkspace | undefined> {
+    return Array.from(this.migrationWorkspaces.values()).find(w => w.groupId === groupId);
+  }
+
+  async createMigrationWorkspace(data: Omit<schema.MigrationWizardWorkspace, "id" | "createdAt" | "updatedAt">): Promise<schema.MigrationWizardWorkspace> {
+    const id = Math.random().toString(36).substring(7);
+    const workspace: schema.MigrationWizardWorkspace = { ...data, id, createdAt: new Date(), updatedAt: new Date() } as any;
+    this.migrationWorkspaces.set(id, workspace);
+    return workspace;
+  }
+
+  async updateMigrationWorkspace(id: string, data: Partial<schema.MigrationWizardWorkspace>): Promise<schema.MigrationWizardWorkspace | undefined> {
+    const workspace = this.migrationWorkspaces.get(id);
+    if (!workspace) return undefined;
+    const updated = { ...workspace, ...data, updatedAt: new Date() };
+    this.migrationWorkspaces.set(id, updated);
+    return updated;
+  }
+
+  async getMigrationWizardMembers(workspaceId: string): Promise<schema.MigrationWizardMember[]> {
+    return Array.from(this.migrationMembers.values()).filter(m => m.workspaceId === workspaceId);
+  }
+
+  async createMigrationWizardMember(data: Omit<schema.MigrationWizardMember, "id" | "createdAt">): Promise<schema.MigrationWizardMember> {
+    const id = Math.random().toString(36).substring(7);
+    const member: schema.MigrationWizardMember = { ...data, id, createdAt: new Date() } as any;
+    this.migrationMembers.set(id, member);
+    return member;
+  }
+
+  async updateMigrationWizardMember(id: string, data: Partial<schema.MigrationWizardMember>): Promise<schema.MigrationWizardMember | undefined> {
+    const member = this.migrationMembers.get(id);
+    if (!member) return undefined;
+    const updated = { ...member, ...data };
+    this.migrationMembers.set(id, updated);
+    return updated;
+  }
+
+  async deleteMigrationWizardMember(id: string): Promise<void> {
+    this.migrationMembers.delete(id);
+  }
+
+  async getMigrationWizardLoans(workspaceId: string): Promise<schema.MigrationWizardLoan[]> {
+    return Array.from(this.migrationLoans.values()).filter(l => l.workspaceId === workspaceId);
+  }
+
+  async createMigrationWizardLoan(data: Omit<schema.MigrationWizardLoan, "id" | "createdAt">): Promise<schema.MigrationWizardLoan> {
+    const id = Math.random().toString(36).substring(7);
+    const loan: schema.MigrationWizardLoan = { ...data, id, createdAt: new Date() } as any;
+    this.migrationLoans.set(id, loan);
+    return loan;
+  }
+
+  async updateMigrationWizardLoan(id: string, data: Partial<schema.MigrationWizardLoan>): Promise<schema.MigrationWizardLoan | undefined> {
+    const loan = this.migrationLoans.get(id);
+    if (!loan) return undefined;
+    const updated = { ...loan, ...data };
+    this.migrationLoans.set(id, updated);
+    return updated;
+  }
+
+  async deleteMigrationWizardLoan(id: string): Promise<void> {
+    this.migrationLoans.delete(id);
+  }
+
+  async getMigrationWizardBankLoans(workspaceId: string): Promise<schema.MigrationWizardBankLoan[]> {
+    return Array.from(this.migrationBankLoans.values()).filter(l => l.workspaceId === workspaceId);
+  }
+
+  async createMigrationWizardBankLoan(data: Omit<schema.MigrationWizardBankLoan, "id" | "createdAt">): Promise<schema.MigrationWizardBankLoan> {
+    const id = Math.random().toString(36).substring(7);
+    const loan: schema.MigrationWizardBankLoan = { ...data, id, createdAt: new Date() } as any;
+    this.migrationBankLoans.set(id, loan);
+    return loan;
+  }
+
+  async updateMigrationWizardBankLoan(id: string, data: Partial<schema.MigrationWizardBankLoan>): Promise<schema.MigrationWizardBankLoan | undefined> {
+    const loan = this.migrationBankLoans.get(id);
+    if (!loan) return undefined;
+    const updated = { ...loan, ...data };
+    this.migrationBankLoans.set(id, updated);
+    return updated;
+  }
+
+  async deleteMigrationWizardBankLoan(id: string): Promise<void> {
+    this.migrationBankLoans.delete(id);
+  }
+
+  async completeMigrationTransaction(): Promise<void> {
+    // Mock implementation for MemStorage
+    return;
   }
 }
 
@@ -937,7 +1067,7 @@ export class DatabaseStorage implements IStorage {
   async getGroupSettings(groupId: string): Promise<GroupSettings> {
     const rows = await this.db.select().from(schema.groupSettings).where(eq(schema.groupSettings.groupId, groupId));
     if (!rows[0]) return { ...DEFAULT_SETTINGS };
-    return rows[0].settings as GroupSettings;
+    return { ...DEFAULT_SETTINGS, ...(rows[0].settings as object) } as GroupSettings;
   }
 
   async updateGroupSettings(groupId: string, settings: GroupSettings): Promise<void> {
@@ -1205,6 +1335,229 @@ export class DatabaseStorage implements IStorage {
     return count + 1;
   }
 
+
+  // Migration Workspace Methods
+  async getMigrationWorkspace(groupId: string): Promise<schema.MigrationWizardWorkspace | undefined> {
+    const [workspace] = await this.db.select().from(schema.migrationWizardWorkspaces).where(eq(schema.migrationWizardWorkspaces.groupId, groupId));
+    return workspace;
+  }
+
+  async createMigrationWorkspace(data: Omit<schema.MigrationWizardWorkspace, "id" | "createdAt" | "updatedAt">): Promise<schema.MigrationWizardWorkspace> {
+    const [workspace] = await this.db.insert(schema.migrationWizardWorkspaces).values(data).returning();
+    return workspace;
+  }
+
+  async updateMigrationWorkspace(id: string, data: Partial<schema.MigrationWizardWorkspace>): Promise<schema.MigrationWizardWorkspace | undefined> {
+    const [workspace] = await this.db.update(schema.migrationWizardWorkspaces)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.migrationWizardWorkspaces.id, id))
+      .returning();
+    return workspace;
+  }
+
+  async getMigrationWizardMembers(workspaceId: string): Promise<schema.MigrationWizardMember[]> {
+    return await this.db.select().from(schema.migrationWizardMembers).where(eq(schema.migrationWizardMembers.workspaceId, workspaceId));
+  }
+
+  async createMigrationWizardMember(data: Omit<schema.MigrationWizardMember, "id" | "createdAt">): Promise<schema.MigrationWizardMember> {
+    const [member] = await this.db.insert(schema.migrationWizardMembers).values(data).returning();
+    return member;
+  }
+
+  async updateMigrationWizardMember(id: string, data: Partial<schema.MigrationWizardMember>): Promise<schema.MigrationWizardMember | undefined> {
+    const [member] = await this.db.update(schema.migrationWizardMembers).set(data).where(eq(schema.migrationWizardMembers.id, id)).returning();
+    return member;
+  }
+
+  async deleteMigrationWizardMember(id: string): Promise<void> {
+    await this.db.delete(schema.migrationWizardMembers).where(eq(schema.migrationWizardMembers.id, id));
+  }
+
+  async getMigrationWizardLoans(workspaceId: string): Promise<schema.MigrationWizardLoan[]> {
+    return await this.db.select().from(schema.migrationWizardLoans).where(eq(schema.migrationWizardLoans.workspaceId, workspaceId));
+  }
+
+  async createMigrationWizardLoan(data: Omit<schema.MigrationWizardLoan, "id" | "createdAt">): Promise<schema.MigrationWizardLoan> {
+    const [loan] = await this.db.insert(schema.migrationWizardLoans).values(data).returning();
+    return loan;
+  }
+
+  async updateMigrationWizardLoan(id: string, data: Partial<schema.MigrationWizardLoan>): Promise<schema.MigrationWizardLoan | undefined> {
+    const [loan] = await this.db.update(schema.migrationWizardLoans).set(data).where(eq(schema.migrationWizardLoans.id, id)).returning();
+    return loan;
+  }
+
+  async deleteMigrationWizardLoan(id: string): Promise<void> {
+    await this.db.delete(schema.migrationWizardLoans).where(eq(schema.migrationWizardLoans.id, id));
+  }
+
+  async getMigrationWizardBankLoans(workspaceId: string): Promise<schema.MigrationWizardBankLoan[]> {
+    return await this.db.select().from(schema.migrationWizardBankLoans).where(eq(schema.migrationWizardBankLoans.workspaceId, workspaceId));
+  }
+
+  async createMigrationWizardBankLoan(data: Omit<schema.MigrationWizardBankLoan, "id" | "createdAt">): Promise<schema.MigrationWizardBankLoan> {
+    const [loan] = await this.db.insert(schema.migrationWizardBankLoans).values(data).returning();
+    return loan;
+  }
+
+  async updateMigrationWizardBankLoan(id: string, data: Partial<schema.MigrationWizardBankLoan>): Promise<schema.MigrationWizardBankLoan | undefined> {
+    const [loan] = await this.db.update(schema.migrationWizardBankLoans).set(data).where(eq(schema.migrationWizardBankLoans.id, id)).returning();
+    return loan;
+  }
+
+  async deleteMigrationWizardBankLoan(id: string): Promise<void> {
+    await this.db.delete(schema.migrationWizardBankLoans).where(eq(schema.migrationWizardBankLoans.id, id));
+  }
+
+  async completeMigrationTransaction(
+    groupId: string,
+    workspaceId: string,
+    snapshot: any,
+    members: any[],
+    internalLoans: any[],
+    bankLoans: any[],
+    completionRecord: Omit<schema.MigrationCompletionRecord, "id" | "completedAt">
+  ): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      // A. Update Group Settings with Opening Snapshot & Status
+      const groupArr = await tx.select().from(schema.groups).where(eq(schema.groups.groupId, groupId));
+      const group = groupArr[0];
+      if (!group) throw new Error("Group not found");
+
+      let settingsRow = await tx.select().from(schema.groupSettings).where(eq(schema.groupSettings.groupId, groupId)).then(r => r[0]);
+      
+      const currentSettingsObj = settingsRow?.settings || {};
+      const newSettingsObj = {
+        ...(currentSettingsObj as any),
+        migration: {
+          ...((currentSettingsObj as any).migration || {}),
+          migrationEnabled: true,
+          migrationCompleted: true,
+          healthStatus: "healthy",
+          openingSnapshot: snapshot
+        }
+      };
+      
+      if (settingsRow) {
+        await tx.update(schema.groupSettings).set({ settings: newSettingsObj }).where(eq(schema.groupSettings.groupId, groupId));
+      } else {
+        await tx.insert(schema.groupSettings).values({ groupId, settings: newSettingsObj });
+      }
+
+      // B. Create Members (users)
+      const userIds = new Map<string, string>(); // draftMemberId -> newUserId
+      for (const m of members) {
+        const id = randomUUID();
+        userIds.set(m.id, id);
+        await tx.insert(schema.users).values({
+          id,
+          groupId,
+          name: m.name,
+          phone: m.mobile || `PENDING-${id.substring(0,8)}`, // fallback if no mobile provided
+          role: m.role || "member",
+          password: "PENDING_ACTIVATION",
+          village: "Imported",
+          joinDate: m.joinedAt ? new Date(m.joinedAt) : new Date(),
+          status: "pending_activation"
+        });
+      }
+
+      // C. Create Internal Loans
+      for (const l of internalLoans) {
+        const newUserId = userIds.get(l.draftMemberId);
+        if (!newUserId) throw new Error(`Member not found for loan ${l.resolutionNo}`);
+        
+        await tx.insert(schema.loans).values({
+          id: randomUUID(),
+          groupId,
+          memberId: newUserId,
+          memberName: l.draftMemberName,
+          amount: l.amount,
+          interest: l.interestRate,
+          duration: l.durationMonths,
+          remainingBalance: l.outstandingPrincipal,
+          outstandingInterest: l.outstandingInterest,
+          totalPrincipalPaid: l.amount - l.outstandingPrincipal,
+          totalInterestPaid: 0,
+          status: l.outstandingPrincipal <= 0 ? "completed" : "approved",
+          resolutionNo: l.resolutionNo,
+          date: l.startDate,
+          approvedAt: new Date(),
+          approvedBy: "migration",
+          calculationMethod: "reducing_balance",
+          purpose: "Historical Loan",
+          hasBankLoan: false
+        });
+      }
+
+      // D. Create Group Bank Loans
+      for (const bl of bankLoans) {
+        const bankLoanId = randomUUID();
+        await tx.insert(schema.groupBankLoans).values({
+          id: bankLoanId,
+          groupId,
+          bankName: bl.bankName,
+          sanctionAmount: bl.sanctionAmount,
+          outstandingPrincipal: bl.outstandingPrincipal,
+          interestRate: bl.interestRate,
+          durationMonths: bl.durationMonths,
+          remainingMonths: bl.remainingMonths,
+          sanctionNo: bl.sanctionNo,
+          sanctionDate: bl.startDate,
+          status: bl.outstandingPrincipal <= 0 ? "closed" : "active"
+        });
+        
+        // As per frozen engine, we must also allocate and create ledger for the bank loan opening balance
+        const allocId = randomUUID();
+        await tx.insert(schema.bankLoanAllocations).values({
+          id: allocId,
+          bankLoanId,
+          memberId: groupId,
+          groupId,
+          allocatedAmount: bl.outstandingPrincipal,
+          interestRate: bl.interestRate,
+          durationMonths: bl.remainingMonths,
+          totalPrincipalPaid: bl.sanctionAmount - bl.outstandingPrincipal,
+          totalInterestPaid: 0,
+          outstandingInterest: 0,
+          status: "active"
+        });
+        
+        const ledgerId = randomUUID();
+        await tx.insert(schema.bankLoanLedger).values({
+          id: ledgerId,
+          allocationId: allocId,
+          receiptNo: `OPEN-${bankLoanId.substring(0,8).toUpperCase()}`,
+          date: new Date(bl.startDate),
+          type: "allocation",
+          openingPrincipal: 0,
+          interestRateApplied: bl.interestRate,
+          interestCharged: 0,
+          interestPaid: 0,
+          principalPaid: 0,
+          paymentReceived: 0,
+          closingPrincipal: bl.outstandingPrincipal,
+          outstandingInterest: 0
+        });
+      }
+
+      // E. Mark Workspace as completed
+      await tx.update(schema.migrationWizardWorkspaces).set({ status: "completed" }).where(eq(schema.migrationWizardWorkspaces.id, workspaceId));
+
+      // F. Insert Audit Log
+      await tx.insert(schema.auditLogs).values({
+        id: randomUUID(),
+        groupId,
+        userId: completionRecord.completedBy,
+        action: "MIGRATION_COMPLETED",
+        entity: "group",
+        details: JSON.stringify({ message: "Migration wizard completed successfully", groupId })
+      });
+
+      // G. Insert Completion Record
+      await tx.insert(schema.migrationCompletionRecords).values(completionRecord);
+    });
+  }
 }
 
 export const storage: IStorage = (process.env.SUPABASE_DATABASE_URL ?? process.env.DATABASE_URL)

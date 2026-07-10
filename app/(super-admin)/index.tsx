@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, Switch } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiGet, apiPost, apiPatch } from "@/lib/api";
@@ -71,6 +71,46 @@ export default function SuperAdminDashboard() {
     }
   };
 
+
+  const promptEnableMigration = (group: any, val: boolean) => {
+    if (!val) {
+      handleToggleMigration(group, false);
+      return;
+    }
+    if (Platform.OS === 'web') {
+      const confirm = window.confirm(t("admin.enable_migration_desc") || "This will allow the group to run the Migration Wizard. Continue?");
+      if (confirm) {
+        handleToggleMigration(group, true);
+      }
+      return;
+    }
+
+    Alert.alert(
+      t("admin.enable_migration") || "Enable Migration Mode?",
+      t("admin.enable_migration_desc") || "This will allow the group to run the Migration Wizard.",
+      [
+        { text: t("common.cancel") || "Cancel", style: "cancel" },
+        {
+          text: t("common.yes") || "Yes",
+          style: "default",
+          onPress: () => handleToggleMigration(group, true)
+        }
+      ]
+    );
+  };
+
+  const handleToggleMigration = async (group: any, enable: boolean) => {
+    try {
+      await apiPatch(`/api/groups/${group.groupId}/settings/migration`, {
+        migration: { migrationEnabled: enable, migrationCompleted: group.migrationCompleted }
+      });
+      setGroups(prev => prev.map(g => 
+        g.groupId === group.groupId ? { ...g, migrationEnabled: enable } : g
+      ));
+    } catch (e) {
+      Alert.alert(t("common.error"), "Failed to toggle migration mode.");
+    }
+  };
   if (loading) {
     return (
       <View style={styles.center}>
@@ -159,6 +199,23 @@ export default function SuperAdminDashboard() {
                         : (t("auto.suspend"))}
                     </Text>
                   </Pressable>
+                  {g.migrationCompleted ? (
+                    <View style={[styles.actionBtn, { backgroundColor: '#f3f4f6', marginTop: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }]}>
+                      <Ionicons name="lock-closed" size={14} color="#6b7280" />
+                      <Text style={[styles.actionBtnText, { color: '#4b5563' }]}>{t("admin.migration_completed") || "Completed (Locked)"}</Text>
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, justifyContent: 'space-between', paddingHorizontal: 5 }}>
+                      <Text style={{ fontSize: 12, color: '#4b5563', fontWeight: 'bold' }}>{t("admin.migration_mode") || "Migration Mode"}</Text>
+                      <Switch
+                        value={g.migrationEnabled}
+                        onValueChange={(val) => {
+                          if (val) promptEnableMigration(g, val);
+                          else handleToggleMigration(g, false);
+                        }}
+                      />
+                    </View>
+                  )}
                 </View>
               </View>
             ))}

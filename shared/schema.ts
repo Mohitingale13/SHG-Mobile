@@ -303,3 +303,199 @@ export type BankLoanAllocation = typeof bankLoanAllocations.$inferSelect;
 export type BankLoanRepayment = typeof bankLoanRepayments.$inferSelect;
 export type BankLoanLedgerEntry = typeof bankLoanLedger.$inferSelect;
 export type LoanLedgerEntry = typeof loanLedger.$inferSelect;
+
+export const migrationMonths = pgTable("migration_months", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  monthYear: varchar("month_year", { length: 7 }).notNull(), // e.g. "2024-01"
+  status: varchar("status", { length: 20 }).notNull().default("open"), // open, verified, locked
+  lockedAt: timestamp("locked_at"),
+  lockedBy: varchar("locked_by", { length: 36 }),
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: varchar("verified_by", { length: 36 }),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (t) => ({
+  migrationMonthGroupIdx: index("migration_month_group_idx").on(t.groupId, t.monthYear),
+}));
+
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
+  action: varchar("action", { length: 100 }).notNull(), // e.g. "UNLOCK_MONTH"
+  entity: varchar("entity", { length: 50 }),
+  details: text("details"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const draftPayments = pgTable("draft_payments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  migrationMonthId: varchar("migration_month_id", { length: 36 }).notNull(),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  memberId: varchar("member_id", { length: 36 }).notNull(),
+  memberName: text("member_name").notNull(),
+  amount: integer("amount").notNull(),
+  lateFee: integer("late_fee").notNull().default(0),
+  date: timestamp("date").notNull().default(sql`now()`),
+  mode: varchar("mode", { length: 20 }).notNull().default("cash"),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+});
+
+export const draftLoans = pgTable("draft_loans", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  migrationMonthId: varchar("migration_month_id", { length: 36 }).notNull(),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  memberId: varchar("member_id", { length: 36 }).notNull(),
+  memberName: text("member_name").notNull(),
+  amount: integer("amount").notNull(),
+  interest: real("interest").notNull(),
+  duration: integer("duration").notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+  date: timestamp("date").notNull().default(sql`now()`),
+});
+
+export const draftLoanRepayments = pgTable("draft_loan_repayments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  migrationMonthId: varchar("migration_month_id", { length: 36 }).notNull(),
+  loanId: varchar("loan_id", { length: 36 }).notNull(),
+  amount: integer("amount").notNull(),
+  shgAmount: integer("shg_amount").notNull().default(0),
+  bankAmount: integer("bank_amount").notNull().default(0),
+  date: timestamp("date").notNull().default(sql`now()`),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+});
+
+export const draftBankLoans = pgTable("draft_bank_loans", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  migrationMonthId: varchar("migration_month_id", { length: 36 }).notNull(),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  bankName: text("bank_name").notNull(),
+  amount: integer("amount").notNull(),
+  annualInterestRate: real("annual_interest_rate").notNull(),
+  durationMonths: integer("duration_months").notNull(),
+  sanctionDate: timestamp("sanction_date").notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+});
+
+export const draftMeetings = pgTable("draft_meetings", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  migrationMonthId: varchar("migration_month_id", { length: 36 }).notNull(),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  scheduledDate: timestamp("scheduled_date").notNull(),
+  attendance: jsonb("attendance").notNull().default(sql`'[]'::jsonb`),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+});
+
+export type MigrationMonth = typeof migrationMonths.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type DraftPayment = typeof draftPayments.$inferSelect;
+export type DraftLoan = typeof draftLoans.$inferSelect;
+export type DraftLoanRepayment = typeof draftLoanRepayments.$inferSelect;
+export type DraftBankLoan = typeof draftBankLoans.$inferSelect;
+export type DraftMeeting = typeof draftMeetings.$inferSelect;
+
+
+
+// ============================================================================
+// MIGRATION WIZARD WORKSPACE
+// ============================================================================
+
+export const migrationWizardWorkspaces = pgTable("migration_wizard_workspaces", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("in_progress"),
+  currentStep: integer("current_step").notNull().default(1),
+  
+  // Group Verification
+  bankName: text("bank_name"),
+  branchName: text("branch_name"),
+  ifscCode: varchar("ifsc_code", { length: 20 }),
+  accountNumber: varchar("account_number", { length: 50 }),
+  formationDate: timestamp("formation_date"),
+  
+  // Opening Snapshot
+  snapshotDate: timestamp("snapshot_date"),
+  cashInHand: integer("cash_in_hand").notNull().default(0),
+  bankBalance: integer("bank_balance").notNull().default(0),
+  totalSavings: integer("total_savings").notNull().default(0),
+  outstandingInternalPrincipal: integer("outstanding_internal_principal").notNull().default(0),
+  outstandingInternalInterest: integer("outstanding_internal_interest").notNull().default(0),
+  outstandingBankPrincipal: integer("outstanding_bank_principal").notNull().default(0),
+  outstandingBankInterest: integer("outstanding_bank_interest").notNull().default(0),
+  
+  // Progress Flags
+  groupVerificationCompleted: boolean("group_verification_completed").notNull().default(false),
+  openingSnapshotCompleted: boolean("opening_snapshot_completed").notNull().default(false),
+  membersCompleted: boolean("members_completed").notNull().default(false),
+  internalLoansCompleted: boolean("internal_loans_completed").notNull().default(false),
+  bankLoansCompleted: boolean("bank_loans_completed").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (t) => ({
+  wizardWorkspaceGroupIdx: index("wizard_workspace_group_idx").on(t.groupId),
+}));
+
+export const migrationWizardMembers = pgTable("migration_wizard_members", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id", { length: 36 }).notNull(),
+  name: text("name").notNull(),
+  mobile: varchar("mobile", { length: 20 }),
+  role: varchar("role", { length: 30 }).notNull().default("member"),
+  joinedAt: timestamp("joined_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const migrationWizardLoans = pgTable("migration_wizard_loans", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id", { length: 36 }).notNull(),
+  draftMemberId: varchar("draft_member_id", { length: 36 }).notNull(),
+  draftMemberName: text("draft_member_name").notNull(),
+  amount: integer("amount").notNull(),
+  outstandingPrincipal: integer("outstanding_principal").notNull(),
+  outstandingInterest: integer("outstanding_interest").notNull(),
+  interestRate: real("interest_rate").notNull(),
+  durationMonths: integer("duration_months").notNull(),
+  remainingMonths: integer("remaining_months").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  resolutionNo: text("resolution_no").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const migrationWizardBankLoans = pgTable("migration_wizard_bank_loans", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id", { length: 36 }).notNull(),
+  bankName: text("bank_name").notNull(),
+  sanctionAmount: integer("sanction_amount").notNull(),
+  outstandingPrincipal: integer("outstanding_principal").notNull(),
+  interestRate: real("interest_rate").notNull(),
+  durationMonths: integer("duration_months").notNull(),
+  remainingMonths: integer("remaining_months").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  sanctionNo: text("sanction_no").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const migrationCompletionRecords = pgTable("migration_completion_records", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  completedAt: timestamp("completed_at").notNull().default(sql`now()`),
+  completedBy: varchar("completed_by", { length: 36 }).notNull(),
+  migrationType: varchar("migration_type", { length: 50 }).notNull(), // 'snapshot_only' or 'full'
+  openingSnapshotDate: timestamp("opening_snapshot_date").notNull(),
+  membersImported: integer("members_imported").notNull(),
+  internalLoansImported: integer("internal_loans_imported").notNull(),
+  bankLoansImported: integer("bank_loans_imported").notNull(),
+  historicalMonthsImported: integer("historical_months_imported").notNull().default(0),
+  openingCashBalance: integer("opening_cash_balance").notNull(),
+  openingBankBalance: integer("opening_bank_balance").notNull(),
+  outstandingInternalBalance: integer("outstanding_internal_balance").notNull(),
+  outstandingBankBalance: integer("outstanding_bank_balance").notNull(),
+  verificationStatus: varchar("verification_status", { length: 50 }),
+});
+
+export type MigrationWizardWorkspace = typeof migrationWizardWorkspaces.$inferSelect;
+export type MigrationWizardMember = typeof migrationWizardMembers.$inferSelect;
+export type MigrationWizardLoan = typeof migrationWizardLoans.$inferSelect;
+export type MigrationWizardBankLoan = typeof migrationWizardBankLoans.$inferSelect;
+export type MigrationCompletionRecord = typeof migrationCompletionRecords.$inferSelect;

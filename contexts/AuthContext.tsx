@@ -67,6 +67,8 @@ interface AuthContextValue {
   group: Group | null;
   isLoading: boolean;
   login: (phone: string, password: string) => Promise<{ success: boolean; error?: string; role?: string }>;
+  checkActivationStatus: (phone: string) => Promise<string>;
+  activateAccount: (phone: string, password: string) => Promise<{ success: boolean; error?: string; role?: string }>;
   registerPresident: (data: { name: string; phone: string; password: string; village: string; joinDate?: string; exitDate?: string; uniqueGroupCode: string }) => Promise<{ success: boolean; error?: string }>;
   registerMember: (data: {
     name: string;
@@ -143,6 +145,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [applySession]);
 
+  const checkActivationStatus = useCallback(async (phone: string) => {
+    try {
+      const res = await apiGet<{ status: string }>(`/api/auth/status/${phone}`, false);
+      return res.status;
+    } catch {
+      return "error";
+    }
+  }, []);
+
+  const activateAccount = useCallback(async (phone: string, password: string) => {
+    try {
+      const data = await apiPost<{ token: string; user: User; group: Group }>(
+        "/api/auth/activate",
+        { phone, password },
+        false,
+      );
+      await saveToken(data.token);
+      applySession(data.user, data.group);
+      return { success: true, role: data.user.role };
+    } catch (e: any) {
+      return { success: false, error: e.message || "error" };
+    }
+  }, [applySession]);
+
   // ── Register ───────────────────────────────────────────────────────────────
   const registerPresident = useCallback(async (data: { name: string; phone: string; password: string; village: string; joinDate?: string; exitDate?: string; uniqueGroupCode: string }) => {
     try {
@@ -208,8 +234,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isTreasurer = user?.role === "treasurer";
 
   const value = useMemo(
-    () => ({ user, group, isLoading, login, registerPresident, registerMember, logout, verifyPassword, isPresident, isTreasurer, refreshSession }),
-    [user, group, isLoading, login, registerPresident, registerMember, logout, verifyPassword, isPresident, isTreasurer, refreshSession],
+    () => ({ user, group, isLoading, login, checkActivationStatus, activateAccount, registerPresident, registerMember, logout, verifyPassword, isPresident, isTreasurer, refreshSession }),
+    [user, group, isLoading, login, checkActivationStatus, activateAccount, registerPresident, registerMember, logout, verifyPassword, isPresident, isTreasurer, refreshSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

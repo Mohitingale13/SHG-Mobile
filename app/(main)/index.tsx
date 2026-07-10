@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
+import { apiGet } from "@/lib/api";
 import Colors from "@/constants/colors";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { processVoiceCommand, isSpeechRecognitionSupported, classifyIntent, type NLPResult } from "@/lib/nlpHandler";
@@ -27,11 +28,93 @@ function StatCard({ icon, label, value, color, onPress }: { icon: string; label:
 type MicState = "idle" | "listening" | "processing" | "result" | "error";
 
 export default function DashboardScreen() {
+  const renderMigrationBanner = () => {
+    const isEnabled = (groupSettings as any)?.migration?.migrationEnabled;
+    const isCompleted = (groupSettings as any)?.migration?.migrationCompleted;
+
+    if (!isEnabled) return null;
+
+    if (isCompleted) {
+      const snapshot = (groupSettings as any)?.migration?.openingSnapshot || {};
+      return (
+        <View style={{ backgroundColor: "#f0fdf4", marginHorizontal: 20, marginBottom: 20, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: "#bbf7d0" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+            <Ionicons name="checkmark-circle" size={28} color="#16a34a" style={{ marginRight: 10 }} />
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#166534" }}>{t("migration.completed") || "Migration Completed"}</Text>
+          </View>
+          <View style={{ backgroundColor: "#fff", padding: 12, borderRadius: 8, marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>{t("migration.opening_snapshot") || "Opening Snapshot"}: {snapshot.asOnDate ? new Date(snapshot.asOnDate).toLocaleDateString() : ""}</Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
+              <Text style={{ fontSize: 14, color: "#334155" }}>{t("migration.cash_in_hand") || "Cash in Hand"}</Text>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#0f172a" }}>₹{snapshot.cashInHand || 0}</Text>
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
+              <Text style={{ fontSize: 14, color: "#334155" }}>{t("migration.bank_balance") || "Bank Balance"}</Text>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#0f172a" }}>₹{snapshot.bankBalance || 0}</Text>
+            </View>
+          </View>
+          <Pressable style={{ backgroundColor: "#16a34a", padding: 12, borderRadius: 8, alignItems: "center" }} disabled={true}>
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{t("migration.historical_entry") || "Historical Entry"} ({t("common.coming_soon") || "Coming Soon"})</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    // In Progress
+    const step = migrationWorkspace ? migrationWorkspace.currentStep : 1;
+    const progressPercent = Math.round((step / 6) * 100);
+    const lastSaved = migrationWorkspace?.updatedAt ? new Date(migrationWorkspace.updatedAt).toLocaleTimeString() : "";
+
+    return (
+      <View style={{ backgroundColor: "#eff6ff", marginHorizontal: 20, marginBottom: 20, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: "#bfdbfe" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="construct" size={24} color="#2563eb" style={{ marginRight: 10 }} />
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#1e3a8a" }}>{t("migration.in_progress") || "Migration in Progress"}</Text>
+          </View>
+          <Text style={{ fontSize: 12, color: "#3b82f6", fontWeight: "600" }}>Step {step} / 6</Text>
+        </View>
+        
+        <View style={{ height: 6, backgroundColor: "#dbeafe", borderRadius: 3, marginBottom: 8, overflow: "hidden" }}>
+          <View style={{ width: `${progressPercent}%`, height: "100%", backgroundColor: "#3b82f6", borderRadius: 3 }} />
+        </View>
+        <Text style={{ fontSize: 12, color: "#64748b", marginBottom: 16, textAlign: "right" }}>{progressPercent}% Complete {lastSaved ? `• Saved ${lastSaved}` : ""}</Text>
+
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Pressable 
+            style={{ flex: 1, backgroundColor: "#fff", padding: 12, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: "#cbd5e1", marginRight: 8 }}
+            onPress={() => {}}
+          >
+            <Text style={{ color: "#475569", fontWeight: "600" }}>{t("common.cancel")}</Text>
+          </Pressable>
+          <Pressable 
+            style={{ flex: 2, backgroundColor: "#2563eb", padding: 12, borderRadius: 8, alignItems: "center" }}
+            onPress={() => router.push("/migration-wizard" as any)}
+          >
+            <Text style={{ color: "#fff", fontWeight: "600" }}>{t("migration.resume") || "Resume Migration"}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   const insets = useSafeAreaInsets();
   const { user, group, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
   const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations } = useData();
   const [refreshing, setRefreshing] = useState(false);
+
+  const [migrationWorkspace, setMigrationWorkspace] = useState<any>(null);
+  useEffect(() => {
+    const isEnabled = (groupSettings as any)?.migration?.migrationEnabled;
+    const isCompleted = (groupSettings as any)?.migration?.migrationCompleted;
+    if (isEnabled && !isCompleted && group?.groupId) {
+      apiGet(`/api/groups/${group.groupId}/migration-workspace`)
+        .then((res) => setMigrationWorkspace(res))
+        .catch(() => {});
+    }
+  }, [groupSettings, group?.groupId]);
+
 
   const [dismissedSavings, setDismissedSavings] = useState(false);
   const [dismissedLoan, setDismissedLoan] = useState(false);
@@ -477,6 +560,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.wrapper}>
+      {renderMigrationBanner()}
       <ScrollView
         style={styles.container}
         contentContainerStyle={[

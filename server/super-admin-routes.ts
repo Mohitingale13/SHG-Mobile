@@ -45,7 +45,23 @@ export function registerSuperAdminRoutes(app: Express) {
   app.get("/api/super-admin/groups", requireAuth as any, requireSuperAdmin as any, async (req: AuthRequest, res) => {
     try {
       const groups = await storage.getAllGroups();
-      return res.json(groups);
+      const settings = await Promise.all(groups.map(g => storage.getGroupSettings(g.groupId)));
+      const workspaces = await Promise.all(groups.map(g => storage.getMigrationWorkspace(g.groupId)));
+      
+      const enhancedGroups = groups.map((g, i) => {
+        const s = settings[i] as any;
+        const sObj = s?.settings || s || {};
+        const w = workspaces[i];
+        return {
+          ...g,
+          migrationEnabled: sObj?.migration?.migrationEnabled || false,
+          migrationCompleted: sObj?.migration?.migrationCompleted || false,
+          migrationStep: w ? w.currentStep : 0,
+          migrationCompletedAt: sObj?.migration?.migrationCompleted ? new Date().toISOString() : null,
+        };
+      });
+      
+      return res.json(enhancedGroups);
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Internal server error" });

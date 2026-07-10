@@ -2,7 +2,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Platform, Alert } from "react-native";
-import { resolveRepaymentAmounts, calculateShgTotal, calculateShgEmi } from "../shared/accounting";
+import { resolveRepaymentAmounts, calculateShgTotal, calculateShgEmi, calculateGroupFinancialSummary } from "../shared/accounting";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -952,17 +952,14 @@ export async function generateFinancialReport({ group, groupMembers, payments, l
   // Date filtered array for period-specific tables (if we wanted to show them, but here it's an overview)
   
   // 1. Backend-identical dashboard calculations (global, not time-filtered)
-  const totalSavings = payments.filter((p:any) => p.status === "confirmed" && p.amount > 0).reduce((sum:number, p:any) => sum + p.amount, 0);
-  const totalLate = payments.filter((p:any) => p.status === "confirmed" && p.lateFee > 0).reduce((sum:number, p:any) => sum + p.lateFee, 0);
+  const summary = calculateGroupFinancialSummary(arguments[0].openingSnapshot, payments, loans, loanRepayments);
   
-  const approvedLoans = loans.filter((l:any) => ["approved", "completed"].includes(l.status));
-  const totalDisbursed = approvedLoans.reduce((sum:number, l:any) => sum + l.amount, 0);
-  const principalCollected = approvedLoans.reduce((sum:number, l:any) => sum + (l.totalPrincipalPaid || 0), 0);
-  const interestCollected = approvedLoans.reduce((sum:number, l:any) => sum + (l.totalInterestPaid || 0), 0);
-  
-  const legacyTotalRepayments = loanRepayments.reduce((sum:number, r:any) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
-  const totalRepaymentsForCash = Math.max(legacyTotalRepayments, principalCollected + interestCollected);
-  const currentBalance = totalSavings + totalLate + totalRepaymentsForCash - totalDisbursed;
+  const totalSavings = summary.totalSavings;
+  const totalLate = summary.totalPenalties;
+  const totalDisbursed = summary.totalPrincipalDisbursed;
+  const principalCollected = summary.principalCollected;
+  const interestCollected = summary.interestCollected;
+  const currentBalance = summary.currentBalance;
   
   const execSummary = `
     <div class="exec-summary">

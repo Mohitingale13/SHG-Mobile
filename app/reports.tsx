@@ -90,7 +90,7 @@ export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
   const { group, president, user, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
-  const { payments, loans, loanRepayments, groupMembers, groupBankLoans, bankLoanAllocations } = useData();
+  const { payments, loans, loanRepayments, groupMembers, groupBankLoans, bankLoanAllocations, groupSettings } = useData();
 
   const [meetings, setMeetings] = useState([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
@@ -222,7 +222,8 @@ export default function ReportsScreen() {
       startDate: calculatedStart,
       endDate: calculatedEnd,
       filterMonth,
-      filterYear
+      filterYear,
+      openingSnapshot: groupSettings?.settings?.openingSnapshot || null
     };
 
     try {

@@ -178,3 +178,99 @@ export function getCurrentLoanRecommendation(loan: any): LoanRecommendation {
     remainingMonths
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA GOVERNANCE & FINANCIAL AGGREGATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface OpeningSnapshot {
+  asOnDate: string | null;
+  totalSavings: number;
+  cashInHand: number;
+  bankBalance: number;
+  outstandingInternalPrincipal: number;
+  outstandingBankPrincipal: number;
+  interestOutstanding: number;
+}
+
+export interface GroupFinancialSummary {
+  totalSavings: number;
+  totalPenalties: number;
+  currentBalance: number; // calculated cash + bank
+  
+  // Internal Loans
+  totalPrincipalDisbursed: number;
+  principalCollected: number;
+  interestCollected: number;
+  outstandingPrincipal: number;
+  outstandingInterest: number;
+  activeLoansCount: number;
+  completedLoansCount: number;
+}
+
+/**
+ * Single source of truth for group financial aggregation.
+ * Merges Opening Snapshot (from Migration) with Live Transactions perfectly.
+ */
+export function calculateGroupFinancialSummary(
+  openingSnapshot: OpeningSnapshot | null | undefined,
+  payments: any[],
+  loans: any[],
+  repayments: any[]
+): GroupFinancialSummary {
+  const snapshot = openingSnapshot || {
+    asOnDate: null,
+    totalSavings: 0,
+    cashInHand: 0,
+    bankBalance: 0,
+    outstandingInternalPrincipal: 0,
+    outstandingBankPrincipal: 0,
+    interestOutstanding: 0,
+  };
+
+  // 1. Savings & Penalties
+  const liveTotalSavings = payments.filter(p => p.status === "confirmed" && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
+  const liveTotalPenalties = payments.filter(p => p.status === "confirmed" && p.lateFee > 0).reduce((sum, p) => sum + p.lateFee, 0);
+  
+  const totalSavings = snapshot.totalSavings + liveTotalSavings;
+  const totalPenalties = liveTotalPenalties; // Penalties weren't in snapshot explicitly, treated as live
+
+  // 2. Loans
+  const activeLoansCount = loans.filter(l => ["approved", "completed"].includes(l.status) && l.remainingBalance > 0).length;
+  const completedLoansCount = loans.filter(l => l.status === "completed" || (l.status === "approved" && l.remainingBalance <= 0)).length;
+
+  const approvedLoans = loans.filter(l => ["approved", "completed"].includes(l.status));
+  const livePrincipalDisbursed = approvedLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
+  
+  const livePrincipalCollected = approvedLoans.reduce((sum, l) => sum + (l.totalPrincipalPaid || 0), 0);
+  const liveInterestCollected = approvedLoans.reduce((sum, l) => sum + (l.totalInterestPaid || 0), 0);
+  const liveOutstandingPrincipal = approvedLoans.reduce((sum, l) => sum + (l.remainingBalance || 0), 0);
+  const liveOutstandingInterest = approvedLoans.reduce((sum, l) => sum + (l.outstandingInterest || 0), 0);
+
+  // For cash balance, we simply add all savings, penalties, and all principal + interest collected
+  const legacyTotalRepayments = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
+  const totalRepaymentsForCash = Math.max(legacyTotalRepayments, livePrincipalCollected + liveInterestCollected);
+  
+  const liveCashFlow = liveTotalSavings + liveTotalPenalties + totalRepaymentsForCash - livePrincipalDisbursed;
+  const openingCashFlow = snapshot.cashInHand + snapshot.bankBalance;
+  
+  const currentBalance = openingCashFlow + liveCashFlow;
+
+  // The true outstanding principal is whatever the loans table says right now! 
+  // (Because during migration, snapshot loans are entered as real loans).
+  // Same for interest.
+  return {
+    totalSavings,
+    totalPenalties,
+    currentBalance,
+    
+    totalPrincipalDisbursed: livePrincipalDisbursed, // Snapshot loans are entered as REAL loans, so their amount is included here.
+    principalCollected: livePrincipalCollected,
+    interestCollected: liveInterestCollected,
+    outstandingPrincipal: liveOutstandingPrincipal,
+    outstandingInterest: liveOutstandingInterest,
+    
+    activeLoansCount,
+    completedLoansCount
+  };
+}
