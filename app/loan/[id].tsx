@@ -270,6 +270,10 @@ export default function LoanDetailScreen() {
         <View style={styles.amountCard}>
           <Text style={styles.amountLabel}>{t("pdf_financial_summary")}</Text>
           <View style={[styles.amountRow, { flexWrap: "wrap", marginTop: 10 }]}>
+            <View style={[styles.amountDetail, { width: '48%', marginBottom: 12 }]}> 
+              <Text style={styles.amountDetailLabel}>{t("name")}</Text>
+              <Text style={styles.amountDetailValue}>{loan.memberName}</Text>
+            </View>
             <View style={[styles.amountDetail, { width: '48%', marginBottom: 12 }]}>
               <Text style={styles.amountDetailLabel}>{t("loanAmount")}</Text>
               <Text style={styles.amountDetailValue}>Rs. {loan.amount.toLocaleString("en-IN")}</Text>
@@ -330,6 +334,7 @@ export default function LoanDetailScreen() {
                 <Text style={styles.amountDetailValue}>{loan.meetingId}</Text>
               </View>
             )}
+            
           </View>
           {showRepayment && (
             <View style={styles.progressContainer}>
@@ -342,55 +347,49 @@ export default function LoanDetailScreen() {
         </View>
 
         {loan.calculationMethod === "reducing_balance" && showRepayment && recommendation && loan.remainingBalance > 0 && (
-          <View style={[styles.amountCard, { marginTop: 16, backgroundColor: Colors.light.card, borderColor: Colors.light.primary, borderWidth: 1 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <Ionicons name="calculator" size={20} color={Colors.light.primary} />
-              <Text style={[styles.amountLabel, { marginBottom: 0 }]}>{t("month")}</Text>
-            </View>
-            
-            <View style={styles.formulaBox}>
-              <Text style={styles.formulaLabel}>{t("outstanding_principal")}</Text>
-              <Text style={styles.formulaValue}>Rs. {recommendation.outstandingPrincipal.toLocaleString("en-IN")}</Text>
-            </View>
-            
-            <View style={styles.formulaBox}>
-              <Text style={styles.formulaLabel}>{t("monthly_interest_rate")}</Text>
-              <Text style={styles.formulaValue}>{loan.interest}%</Text>
-            </View>
-            
-            <View style={styles.formulaHighlight}>
-              <Text style={styles.formulaLabelHighlight}>{t("current_month_interest")}</Text>
-              <Text style={styles.formulaDetail}>Rs. {recommendation.outstandingPrincipal.toLocaleString("en-IN")} × {loan.interest}%</Text>
-              <Text style={styles.formulaResult}>= Rs. {recommendation.currentMonthInterest.toLocaleString("en-IN")}</Text>
-            </View>
-
-            <View style={styles.formulaBox}>
-              <Text style={styles.formulaLabel}>{t("suggested_principal")}</Text>
-              <Text style={styles.formulaDetail}>Rs. {recommendation.outstandingPrincipal.toLocaleString("en-IN")} ÷ {remainingMonths} {t("auto.mo")}</Text>
-              <Text style={styles.formulaResult}>= Rs. {(recommendation?.recommendedPrincipal || 0).toLocaleString("en-IN")}</Text>
-            </View>
-            
-            <View style={styles.formulaHighlight}>
-              <Text style={styles.formulaLabelHighlight}>{t("suggested_installment")}</Text>
-              <Text style={styles.formulaDetail}>Rs. {(recommendation?.recommendedPrincipal || 0).toLocaleString("en-IN")} + Rs. {recommendation.currentMonthInterest.toLocaleString("en-IN")}</Text>
-              <Text style={styles.formulaResult}>= Rs. {((recommendation?.recommendedPrincipal || 0) + recommendation.currentMonthInterest).toLocaleString("en-IN")}</Text>
-            </View>
-
-            {(loan.outstandingInterest || 0) > 0 && (
-              <View style={[styles.formulaBox, { backgroundColor: '#FEF2F2' }]}>
-                <Text style={[styles.formulaLabel, { color: Colors.light.danger }]}>{t("outstanding_interest_remaining")}</Text>
-                <Text style={[styles.formulaValue, { color: Colors.light.danger }]}>Rs. {(loan.outstandingInterest || 0).toLocaleString("en-IN")}</Text>
+          <View style={[styles.amountCard, styles.recommendationCard]}>
+            <View style={styles.recommendationHeader}>
+              <View style={styles.recommendationHeaderLeft}>
+                <Ionicons name="calculator" size={18} color={Colors.light.primary} />
+                <Text style={styles.recommendationTitle}>{t("month")}</Text>
               </View>
-            )}
+              <View style={styles.recommendationBadge}>
+                <Text style={styles.recommendationBadgeText}>{t("suggested_installment")}</Text>
+              </View>
+            </View>
 
-            <View style={[styles.formulaHighlight, { backgroundColor: Colors.light.primary + '10', borderTopWidth: 1, borderColor: Colors.light.primary + '30', marginTop: 8 }]}>
-              <Text style={[styles.formulaLabelHighlight, { color: Colors.light.primary }]}>{t("total_suggested_payment")}</Text>
+            <View style={styles.recommendationTable}>
+              <View style={styles.recommendationRow}>
+                <Text style={styles.recommendationLabel}>{t("outstanding_principal")}</Text>
+                <Text style={styles.recommendationValue}>Rs. {recommendation.outstandingPrincipal.toLocaleString("en-IN")}</Text>
+              </View>
+
+              <View style={styles.recommendationRow}>
+                <Text style={styles.recommendationLabel}>{t("monthly_interest_rate")}</Text>
+                <Text style={styles.recommendationValue}>{loan.interest}%</Text>
+              </View>
+
+              <View style={styles.recommendationRow}>
+                <Text style={styles.recommendationLabel}>{t("current_month_interest")}</Text>
+                <Text style={styles.recommendationValue}>Rs. {recommendation.currentMonthInterest.toLocaleString("en-IN")}</Text>
+              </View>
+
+              <View style={styles.recommendationRow}>
+                <Text style={styles.recommendationLabel}>{t("suggested_principal")}</Text>
+                <Text style={styles.recommendationValue}>Rs. {(recommendation?.recommendedPrincipal || 0).toLocaleString("en-IN")}</Text>
+              </View>
+
               {(loan.outstandingInterest || 0) > 0 && (
-                <Text style={styles.formulaDetail}>Rs. {((recommendation?.recommendedPrincipal || 0) + recommendation.currentMonthInterest).toLocaleString("en-IN")} + Rs. {(loan.outstandingInterest || 0).toLocaleString("en-IN")}</Text>
+                <View style={[styles.recommendationRow, styles.recommendationDangerRow]}>
+                  <Text style={styles.recommendationLabel}>{t("outstanding_interest_remaining")}</Text>
+                  <Text style={styles.recommendationValueDanger}>Rs. {(loan.outstandingInterest || 0).toLocaleString("en-IN")}</Text>
+                </View>
               )}
-              <Text style={[styles.formulaResult, { fontSize: 18, color: Colors.light.primary }]}>
-                = Rs. {(recommendation?.recommendedMonthlyPayment || 0).toLocaleString("en-IN")}
-              </Text>
+
+              <View style={[styles.recommendationRow, styles.recommendationHighlightRow]}>
+                <Text style={styles.recommendationLabelHighlight}>{t("total_suggested_payment")}</Text>
+                <Text style={styles.recommendationValueHighlight}>Rs. {(recommendation?.recommendedMonthlyPayment || 0).toLocaleString("en-IN")}</Text>
+              </View>
             </View>
           </View>
         )}
@@ -405,12 +404,6 @@ export default function LoanDetailScreen() {
             <Text style={styles.approveBtnText}>{t("qr_modal_title")}</Text>
           </Pressable>
         )}
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoRow}>{t("name")}: {loan.memberName}</Text>
-          {loan.resolutionNo ? <Text style={styles.infoRow}>{t("resolutionNo")} {loan.resolutionNo}</Text> : null}
-          <Text style={styles.infoRow}>{t("date")}: {new Date(loan.createdAt).toLocaleDateString("en-IN")}</Text>
-        </View>
 
         {(loan.status === "rejected" || loan.status === "treasurer_rejected") && (
           <View style={styles.rejectionBox}>
@@ -1296,6 +1289,93 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textMuted,
     marginLeft: 8,
+  },
+  recommendationCard: {
+    marginTop: 16,
+    backgroundColor: Colors.light.card,
+    borderColor: Colors.light.primary,
+    borderWidth: 1,
+  },
+  recommendationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  recommendationHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recommendationTitle: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  recommendationBadge: {
+    backgroundColor: Colors.light.primary + '12',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  recommendationBadgeText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 11,
+    color: Colors.light.primary,
+  },
+  recommendationTable: {
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: Colors.light.background,
+  },
+  recommendationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  recommendationDangerRow: {
+    backgroundColor: '#FEF2F2',
+  },
+  recommendationHighlightRow: {
+    backgroundColor: Colors.light.primary + '10',
+  },
+  recommendationLabel: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    flex: 1,
+    paddingRight: 8,
+  },
+  recommendationLabelHighlight: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 12,
+    color: Colors.light.primary,
+    flex: 1,
+    paddingRight: 8,
+  },
+  recommendationValue: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 12,
+    color: Colors.light.text,
+    textAlign: 'right',
+  },
+  recommendationValueDanger: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 12,
+    color: Colors.light.danger,
+    textAlign: 'right',
+  },
+  recommendationValueHighlight: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 13,
+    color: Colors.light.primary,
+    textAlign: 'right',
   },
   formulaBox: {
     backgroundColor: Colors.light.inputBg,
