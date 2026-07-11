@@ -446,12 +446,12 @@ export default function ReportsScreen() {
             onToggle={() => setExpandedSection(expandedSection === "standard" ? "" : "standard")}
           >
             <ReportCard 
-              type="cash_book" 
-              titleKey="reports.cash_book" 
-              defaultTitle="Cash Book" 
-              icon="cash" 
-              descKey="reports.cash_book_desc" 
-              defaultDesc="Running physical cash balance tracking all SHG cash movements." 
+              type="cash_book"
+              titleKey="reports.member_financial_register"
+              defaultTitle="Member Financial Register"
+              icon="cash"
+              descKey="reports.member_financial_register_desc"
+              defaultDesc="Official member-wise savings, loan recovery, disbursement, and closing-balance register."
             />
             <ReportCard 
               type="bank_book" 
