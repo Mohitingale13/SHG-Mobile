@@ -1458,117 +1458,141 @@ export async function generateMeetingRegister({ group, groupMembers, meetings, t
 
 // ─── 10. Cash Book (NEW) ──────────────────────────────────────────────────────
 
-export async function generateCashBook({ group, groupMembers, payments, loans, loanRepayments, loanLedger, timeRange, startDate, endDate, filterMonth, filterYear, appliedFiltersText, t, user }: any) {
+export async function generateCashBook({ group, groupMembers, payments, loans, loanLedger, bankLoanAllocations, bankLoanLedger, timeRange, startDate, endDate, filterMonth, filterYear, appliedFiltersText, t, user }: any) {
   const pres = groupMembers.find((m: any) => m.role === "president")?.name || "—";
   const treas = groupMembers.find((m: any) => m.role === "treasurer")?.name || "—";
-  
-  let transactions: any[] = [];
-  
-  // 1. Savings (Mode !== online)
-  payments.filter((p:any) => p.status === "confirmed" && p.mode !== "online").forEach((p:any) => {
-    transactions.push({
-      date: new Date(p.date || p.createdAt),
-      particulars: `Savings - ${p.memberName} ${p.month?'('+p.month+')':''}`,
-      receiptNo: p.id.toString().slice(-4),
-      debit: p.amount + (p.lateFee||0), // Cash IN
-      credit: 0
-    });
-  });
-  
-  // 2. Legacy Loan Repayments (if not found in ledger, and mode is not online)
-  // We determine mode: if mode exists and is online, skip. Else include.
-  loanRepayments.filter((r:any) => r.status === "confirmed" && r.mode !== "online").forEach((r:any) => {
-    transactions.push({
-      date: new Date(r.paidAt || r.createdAt),
-      particulars: `Loan Repayment (Legacy) - ${groupMembers.find((m:any)=>m.id===r.memberId)?.name||''}`,
-      receiptNo: r.id.toString().slice(-4),
-      debit: resolveRepaymentAmounts(r).shgAmount, // Cash IN
-      credit: 0
-    });
-  });
+  const amount = (value: any) => Number(value || 0);
+  const displayAmount = (value: any) => amount(value).toLocaleString("en-IN");
+  const escapeHtml = (value: any) => String(value ?? "—").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char] as string));
+  const recordDate = (item: any) => new Date(item.date || item.paidAt || item.createdAt);
+  const reportEnd = endDate ? new Date(endDate) : new Date();
+  reportEnd.setHours(23, 59, 59, 999);
+  const reportStart = startDate ? new Date(startDate) : undefined;
+  if (reportStart) reportStart.setHours(0, 0, 0, 0);
+  const isOnOrBeforeEnd = (item: any) => recordDate(item).getTime() <= reportEnd.getTime();
+  const isInPeriod = (item: any) => {
+    const date = recordDate(item).getTime();
+    return !Number.isNaN(date) && (!reportStart || date >= reportStart.getTime()) && date <= reportEnd.getTime();
+  };
+  const ledgerBeforeEnd = (entries: any[], predicate: (entry: any) => boolean) => entries
+    .filter((entry) => predicate(entry) && isOnOrBeforeEnd(entry))
+    .sort((a, b) => recordDate(b).getTime() - recordDate(a).getTime())[0];
+  const memberCode = (member: any) => member.memberCode || member.code || member.uniqueMemberCode || String(member.id || "—").slice(-6).toUpperCase();
 
-  // 3. New Loan Ledger (Disbursements & Repayments) - Only include if mode is not explicitly online
-  // Since ledger doesn't have mode, we assume Internal Loan ledger = Cash, unless future proofed.
-  (loanLedger || []).forEach((l:any) => {
-    const loan = loans.find((ln:any)=>ln.id === l.loanId);
-    if (!loan) return;
-    const memberName = groupMembers.find((m:any)=>m.id===loan.memberId)?.name || '';
-    
-    // Check if the original loan or repayment had a mode
-    const isOnline = (l.mode === "online") || (loan.disbursementMode === "online");
-    if (!isOnline) {
-      if (l.type === "disbursement") {
-        transactions.push({
-          date: new Date(l.date),
-          particulars: `Loan Disbursed - ${memberName}`,
-          receiptNo: l.receiptNo || l.id.toString().slice(-4),
-          debit: 0,
-          credit: l.closingPrincipal // Cash OUT
-        });
-      } else if (l.type === "repayment") {
-        // Skip adding here if it was already added via legacy loanRepayments
-        // For accurate cashbook, if ledger exists, we should ideally use ledger. 
-        // We'll keep legacy for now, but ledger is more robust. We'll use ledger for disbursements.
-      }
-    }
-  });
-  
-  // Sort chronologically
-  transactions.sort((a, b) => a.date.getTime() - b.date.getTime());
-  
-  // Time Range Filter
-  if (timeRange !== "all") {
-    transactions = filterByDateRange(transactions, timeRange, startDate, endDate, filterMonth, filterYear);
-  }
-  
-  let runningBalance = 0;
-  let totalDebit = 0;
-  let totalCredit = 0;
-  
-  let rows = transactions.map((tr:any, i:number) => {
-    runningBalance += tr.debit;
-    runningBalance -= tr.credit;
-    totalDebit += tr.debit;
-    totalCredit += tr.credit;
-    
-    return `<tr>
-      <td class="c">${formatDate(tr.date.toISOString())}</td>
-      <td class="c">${tr.receiptNo}</td>
-      <td>${tr.particulars}</td>
-      <td class="r">${tr.debit > 0 ? formatCurrency(tr.debit) : '—'}</td>
-      <td class="r">${tr.credit > 0 ? formatCurrency(tr.credit) : '—'}</td>
-      <td class="r"><b>${formatCurrency(runningBalance)}</b></td>
-    </tr>`;
-  }).join("");
+  // This register deliberately uses loan ledgers as the repayment source. Legacy
+  // repayment records are excluded to prevent a repayment from being counted twice.
+  const internalLedgers = loanLedger || [];
+  const bankLedgers = bankLoanLedger || [];
+  const allocations = bankLoanAllocations || [];
+  const activeMembers = (groupMembers || []).filter((member: any) => member.status !== "inactive" && member.status !== "removed");
 
-  if(!rows) rows = `<tr><td colspan="6" class="c">No cash transactions found.</td></tr>`;
+  const memberRows = activeMembers.map((member: any, index: number) => {
+    const memberPayments = (payments || []).filter((payment: any) => payment.memberId === member.id && payment.status === "confirmed");
+    const memberLoans = (loans || []).filter((loan: any) => loan.memberId === member.id && ["approved", "completed"].includes(loan.status));
+    const memberLoanIds = new Set(memberLoans.map((loan: any) => loan.id));
+    const memberAllocations = allocations.filter((allocation: any) => allocation.memberId === member.id);
+    const memberAllocationIds = new Set(memberAllocations.map((allocation: any) => allocation.id));
+    const memberInternalLedger = internalLedgers.filter((entry: any) => memberLoanIds.has(entry.loanId));
+    const memberBankLedger = bankLedgers.filter((entry: any) => memberAllocationIds.has(entry.allocationId));
+
+    const monthlySavings = memberPayments.filter(isInPeriod).reduce((sum: number, payment: any) => sum + amount(payment.amount), 0);
+    const lateFees = memberPayments.filter(isInPeriod).reduce((sum: number, payment: any) => sum + amount(payment.lateFee), 0);
+    const internalPrincipalRecovery = memberInternalLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.principalPaid), 0);
+    const internalInterestRecovery = memberInternalLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.interestPaid), 0);
+    const bankPrincipalRecovery = memberBankLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.principalPaid), 0);
+    const bankInterestRecovery = memberBankLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.interestPaid), 0);
+    const internalLoanGiven = memberInternalLedger.filter((entry: any) => entry.type === "disbursement" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.paymentReceived || entry.closingPrincipal), 0);
+    const bankLoanGiven = memberBankLedger.filter((entry: any) => entry.type === "disbursement" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.paymentReceived || entry.closingPrincipal), 0);
+
+    // Extra savings, fixed deposits, other contributions, and member refunds are
+    // not persisted in the current schema, so their official-register cells remain zero.
+    const additionalSavings = 0;
+    const fixedDeposit = 0;
+    const otherContribution = 0;
+    const savingsAndProfitReturned = 0;
+    const fixedDepositAndInterestReturned = 0;
+    const additionalSavingsAndInterestReturned = 0;
+    const totalDeposits = monthlySavings + additionalSavings + fixedDeposit + internalPrincipalRecovery + internalInterestRecovery + bankPrincipalRecovery + bankInterestRecovery + lateFees + otherContribution;
+    const totalPayments = internalLoanGiven + bankLoanGiven + savingsAndProfitReturned + fixedDepositAndInterestReturned + additionalSavingsAndInterestReturned;
+
+    const internalClosing = memberLoans.reduce((sum: number, loan: any) => {
+      const latest = ledgerBeforeEnd(memberInternalLedger, (entry) => entry.loanId === loan.id);
+      if (latest) return sum + amount(latest.closingPrincipal) + amount(latest.outstandingInterest);
+      return isOnOrBeforeEnd(loan) ? sum + amount(loan.amount) : sum;
+    }, 0);
+    const internalPrincipalOutstanding = memberLoans.reduce((sum: number, loan: any) => {
+      const latest = ledgerBeforeEnd(memberInternalLedger, (entry) => entry.loanId === loan.id);
+      if (latest) return sum + amount(latest.closingPrincipal);
+      return isOnOrBeforeEnd(loan) ? sum + amount(loan.amount) : sum;
+    }, 0);
+    const bankClosing = memberAllocations.reduce((sum: number, allocation: any) => {
+      const latest = ledgerBeforeEnd(memberBankLedger, (entry) => entry.allocationId === allocation.id);
+      return sum + (latest ? amount(latest.closingPrincipal) + amount(latest.outstandingInterest) : amount(allocation.outstandingBalance) + amount(allocation.outstandingInterest));
+    }, 0);
+    const bankPrincipalOutstanding = memberAllocations.reduce((sum: number, allocation: any) => {
+      const latest = ledgerBeforeEnd(memberBankLedger, (entry) => entry.allocationId === allocation.id);
+      return sum + (latest ? amount(latest.closingPrincipal) : amount(allocation.outstandingBalance));
+    }, 0);
+    const closingSavings = memberPayments.filter(isOnOrBeforeEnd).reduce((sum: number, payment: any) => sum + amount(payment.amount), 0);
+
+    return { index: index + 1, member, monthlySavings, additionalSavings, fixedDeposit, internalPrincipalRecovery, internalInterestRecovery, bankPrincipalRecovery, bankInterestRecovery, lateFees, otherContribution, totalDeposits, internalLoanGiven, bankLoanGiven, savingsAndProfitReturned, fixedDepositAndInterestReturned, additionalSavingsAndInterestReturned, totalPayments, internalExpectedLoan: internalClosing, bankExpectedLoan: bankClosing, closingSavings, internalPrincipalOutstanding, bankPrincipalOutstanding };
+  });
+  const columns = ["monthlySavings", "additionalSavings", "fixedDeposit", "internalPrincipalRecovery", "internalInterestRecovery", "bankPrincipalRecovery", "bankInterestRecovery", "lateFees", "otherContribution", "totalDeposits", "internalLoanGiven", "bankLoanGiven", "savingsAndProfitReturned", "fixedDepositAndInterestReturned", "additionalSavingsAndInterestReturned", "totalPayments", "internalExpectedLoan", "bankExpectedLoan", "closingSavings", "internalPrincipalOutstanding", "bankPrincipalOutstanding"];
+  const totals = columns.reduce((result: any, column) => ({ ...result, [column]: memberRows.reduce((sum: number, row: any) => sum + row[column], 0) }), {});
+  const rows = memberRows.map((row: any) => `<tr>
+    <td class="c">${row.index}</td><td>${escapeHtml(row.member.name)}</td><td class="c">${escapeHtml(memberCode(row.member))}</td>
+    ${columns.map((column) => `<td class="r">${displayAmount(row[column])}</td>`).join("")}
+  </tr>`).join("") || `<tr><td colspan="24" class="c">सभासदांची नोंद उपलब्ध नाही.</td></tr>`;
 
   const tables = `
-    <table>
+    <style>
+      @page { size: A3 landscape; margin: 9mm; }
+      .official-register { table-layout: fixed; font-size: 5.6px; }
+      .official-register th, .official-register td { padding: 2px 1px; border: 1px solid #64748b; overflow-wrap: anywhere; }
+      .official-register th { text-align: center; text-transform: none; line-height: 1.2; }
+      .official-register th small { font-size: 6px; opacity: .9; }
+      .official-register .column-number-row th { background: #fff; color: #0f172a; font-size: 6px; padding: 2px 1px; }
+      .official-register td:nth-child(n+4) { white-space: nowrap; }
+      .official-register td:nth-child(1) { width: 2%; }.official-register td:nth-child(2) { width: 10%; }.official-register td:nth-child(3) { width: 4%; }
+    </style>
+    <table class="official-register">
       <thead>
         <tr>
-          <th class="c">${t("pdf_date", {defaultValue:"Date"})}</th>
-          <th class="c">${t("pdf_receipt_no", {defaultValue:"Receipt"})}</th>
-          <th>${t("pdf_particulars", {defaultValue:"Particulars"})}</th>
-          <th class="r">${t("pdf_cash_in", {defaultValue:"Cash In"})} (Debit)</th>
-          <th class="r">${t("pdf_cash_out", {defaultValue:"Cash Out"})} (Credit)</th>
-          <th class="r">${t("pdf_balance", {defaultValue:"Balance"})}</th>
+          <th rowspan="4">अ. क्र.</th>
+          <th colspan="2">सभासदाचे संपूर्ण नाव</th>
+          <th colspan="10">जमा रक्कम (रुपये)</th>
+          <th colspan="6">नावे रक्कम (रुपये)</th>
+          <th colspan="5">आज अखेरची स्थिती</th>
+        </tr>
+        <tr>
+          <th rowspan="3">नाव</th><th rowspan="3">सभासद कोड क्रमांक</th>
+          <th rowspan="3">गटाकडे जमा केलेली मासिक बचत</th>
+          <th colspan="2">गटाकडे जमा केलेली अतिरिक्त रक्कम</th>
+          <th colspan="4">सभासदाने गटाकडे परतफेड केलेली कर्ज रक्कम</th>
+          <th rowspan="3">दंड</th><th rowspan="3">गटातील सामूहिक खर्चाकरिता केलेली इतर जमा</th><th rowspan="3">रकाना (3 ते 8) ची बेरीज</th>
+          <th colspan="2">महिलेला दिलेल्या कर्जाचा तपशील</th><th colspan="3">महिलेला परत केलेली रक्कम</th><th rowspan="3">रकाना (10 ते 11) ची बेरीज</th>
+          <th colspan="2">घटवले परतफेड करावयाची अपेक्षित कर्ज रक्कम व्याजासह</th><th rowspan="3">आज अखेरची बचत</th><th colspan="2">आज अखेर कर्ज बाकी</th>
+        </tr>
+        <tr>
+          <th rowspan="2">जास्तीची बचत</th><th rowspan="2">मुदत ठेव</th>
+          <th colspan="2">अंतर्गत</th><th colspan="2">बँक</th>
+          <th rowspan="2">अंतर्गत रक्कम</th><th rowspan="2">बँक कर्ज रक्कम</th>
+          <th rowspan="2">मासिक बचत + नफा</th><th rowspan="2">मुदत ठेव + व्याज</th><th rowspan="2">जास्तीची बचत + व्याज</th>
+          <th rowspan="2">अंतर्गत</th><th rowspan="2">बँक</th><th rowspan="2">अंतर्गत</th><th rowspan="2">बँक</th>
+        </tr>
+        <tr><th>मुद्दल</th><th>व्याज</th><th>मुद्दल</th><th>व्याज</th></tr>
+        <tr class="column-number-row">
+          <th>१</th><th colspan="2">२</th><th>३</th><th colspan="2">४</th><th colspan="2">५</th><th colspan="2">६</th><th>७</th><th>८</th><th>९</th><th colspan="2">१०</th><th colspan="3">११</th><th>१२</th><th colspan="2">१३</th><th>१४</th><th colspan="2">१५</th>
         </tr>
       </thead>
       <tbody>
         ${rows}
-        <tr class="total-row">
-          <td colspan="3" class="r">Totals for Period</td>
-          <td class="r">${formatCurrency(totalDebit)}</td>
-          <td class="r">${formatCurrency(totalCredit)}</td>
-          <td class="r">${formatCurrency(runningBalance)}</td>
-        </tr>
+        <tr class="total-row"><td colspan="3" class="r">एकूण</td>${columns.map((column) => `<td class="r">${displayAmount(totals[column])}</td>`).join("")}</tr>
       </tbody>
-    </table>
-  `;
+    </table>`;
 
   const html = buildStandardPdfTemplate({
-    title: t("reports.cash_book", {defaultValue: "Cash Book"}),
+    title: "जमारखर्च पुस्तक / Cash Book",
     group,
     presidentName: pres,
     treasurerName: treas,
@@ -1579,7 +1603,7 @@ export async function generateCashBook({ group, groupMembers, payments, loans, l
     t
   });
   
-  await openAsPdf(html, "Cash_Book.pdf");
+  await openAsPdf(html, "JamaKharch_Pustak.pdf");
 }
 
 // ─── 11. Bank Book (NEW) ──────────────────────────────────────────────────────
