@@ -157,28 +157,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "groupNotFound" });
       }
       const existingPhone = await storage.getUserByPhone(phone);
-      if (existingPhone) {
-        return res.status(409).json({ error: "Phone number already registered" });
-      }
+      let user;
 
-      const user = await storage.createUser({
-        name,
-        phone,
-        password,
-        village,
-        joinDate: joinDate ? new Date(joinDate) : now(req),
-        exitDate: exitDate ? new Date(exitDate) : undefined,
-        role: "member",
-        groupId: group.groupId,
-        status: "active",
-        preferredLanguage: group.preferredLanguage,
-      });
+      if (existingPhone) {
+        if (existingPhone.password === "password123" && existingPhone.groupId === group.groupId) {
+          // Member was manually added by President, now they are completing registration
+          user = await storage.updateUser(existingPhone.id, {
+            name: name,
+            password: password,
+            village: village
+          });
+        } else {
+          return res.status(409).json({ error: "Phone number already registered" });
+        }
+      } else {
+        user = await storage.createUser({
+          name,
+          phone,
+          password,
+          village,
+          joinDate: joinDate ? new Date(joinDate) : now(req),
+          exitDate: exitDate ? new Date(exitDate) : undefined,
+          role: "member",
+          groupId: group.groupId,
+          status: "active",
+          preferredLanguage: group.preferredLanguage,
+        });
+      }
 
       const session = await storage.createSession(user.id);
       const { password: _p, ...safeUser } = user;
       return res
         .status(201)
         .json({ token: session.token, user: safeUser, group });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/groups/verify/:code", async (req, res) => {
+    try {
+      const { code } = req.params;
+      const group = await storage.getGroupByUniqueGroupCode(code.trim());
+      
+      if (!group) {
+        return res.status(404).json({ error: "invalidOrExpiredCode" });
+      }
+      
+      return res.json({ name: group.name, uniqueGroupCode: group.uniqueGroupCode });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Internal server error" });
@@ -208,6 +235,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post(
+    "/api/auth/change-password",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { currentPassword, newPassword, village } = req.body;
+        if (!newPassword) {
+          return res.status(400).json({ error: "Password cannot be empty" });
+        }
+        
+        const user = await storage.getUserById(req.currentUser!.id);
+        if (!user || (currentPassword && user.password !== currentPassword)) {
+          return res.status(401).json({ error: "Invalid current password" });
+        }
+        
+        const updateData: any = { password: newPassword };
+        if (village) {
+          updateData.village = village;
+        }
+        
+        const updatedUser = await storage.updateUser(user.id, updateData);
+        if (!updatedUser) {
+          return res.status(500).json({ error: "Failed to update password" });
+        }
+        
+        const { password: _p, ...safeUser } = updatedUser;
+        return res.json({ ok: true, user: safeUser });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  app.post(
     "/api/auth/logout",
     requireAuth as any,
     async (req: AuthRequest, res) => {
@@ -227,6 +288,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { password: _p, ...safeUser } = user;
       return res.json({ user: safeUser, group });
     },
+  );
+
+  app.post(
+    "/api/groups/:groupId/members",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { groupId } = req.params;
+        const { name, phone, joinDate, address } = req.body;
+        
+        if (!name || !phone) return res.status(400).json({ error: "Name and phone are required" });
+        
+        const existingPhone = await storage.getUserByPhone(phone);
+        if (existingPhone) {
+          return res.status(409).json({ error: "Phone number already registered" });
+        }
+
+        const group = await storage.getGroupByGroupId(groupId);
+        
+        const user = await storage.createUser({
+          name: name.trim(),
+          phone: phone.trim(),
+          password: "password123", // Default password for manually added members
+          village: address || group?.village || "",
+          joinDate: joinDate ? new Date(joinDate) : now(req),
+          role: "member",
+          groupId: groupId,
+          status: "active",
+          preferredLanguage: group?.preferredLanguage || "en",
+        });
+
+        const { password: _p, ...safeUser } = user;
+        return res.status(201).json(safeUser);
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Failed to add member" });
+      }
+    }
   );
 
   app.patch(
@@ -258,13 +359,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const members = await storage.getUsersByGroupId(groupId);
         
         const activeMembers = members.filter(m => m.status === "active").length;
-        const totalSavings = payments.filter(p => p.status === "confirmed" && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
+        const groupSettings = await storage.getGroupSettings(groupId);
+        const openingBalances = groupSettings?.settings?.openingBalances || {};
+        const openingSavings = openingBalances.totalSavings || 0;
+        const openingCash = openingBalances.cashInHand || 0;
+        const openingBank = openingBalances.bankBalance || 0;
+
+        const totalSavings = openingSavings + payments.filter(p => p.status === "confirmed" && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
         const totalPenalties = payments.filter(p => p.status === "confirmed" && p.lateFee > 0).reduce((sum, p) => sum + p.lateFee, 0);
         
         const activeLoansCount = loans.filter(l => ["approved", "completed"].includes(l.status) && l.remainingBalance > 0).length;
         const completedLoansCount = loans.filter(l => l.status === "completed" || (l.status === "approved" && l.remainingBalance <= 0)).length;
 
         const approvedLoans = loans.filter(l => ["approved", "completed"].includes(l.status));
+        // Only count disbursements that occurred *after* opening balances.
+        // Wait, loans entered from existing setup will just have their normal amount.
         const totalPrincipalDisbursed = approvedLoans.reduce((sum, l) => sum + l.amount, 0);
         
         // Exact alignment with SHG rules using ONLY snapshot fields from the Loan object
@@ -273,13 +382,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const outstandingPrincipal = approvedLoans.reduce((sum, l) => sum + (l.remainingBalance || 0), 0);
         const outstandingInterest = approvedLoans.reduce((sum, l) => sum + (l.outstandingInterest || 0), 0);
         
-        // For cash balance, we simply add all savings, penalties, and all principal + interest collected
-        // Note: For legacy flat loans that don't have totalPrincipalPaid, the current cash balance will be slightly off,
-        // but for new reducing balance loans it is 100% accurate.
-        // Actually, to be safe for legacy loans we can still compute totalRepayments from the ledger for cash balance.
+        // For cash balance, we add opening balances to operations
         const legacyTotalRepayments = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
         const totalRepaymentsForCash = Math.max(legacyTotalRepayments, principalCollected + interestCollected);
-        const currentBalance = totalSavings + totalPenalties + totalRepaymentsForCash - totalPrincipalDisbursed;
+        
+        // Operational Balance generated since start
+        const operationalSavings = totalSavings - openingSavings;
+        const currentBalance = openingCash + openingBank + operationalSavings + totalPenalties + totalRepaymentsForCash - totalPrincipalDisbursed;
 
         return res.json({
           totalSavings,
@@ -296,6 +405,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (e) {
         console.error(e);
         return res.status(500).json({ error: "Failed to load summary" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/groups/:groupId/opening-balances",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { groupId } = req.params;
+        const openingBalances = req.body;
+        const groupSettings = await storage.getGroupSettings(groupId);
+        const settings = groupSettings ? groupSettings.settings : {};
+        
+        settings.openingBalances = openingBalances;
+        settings.setupProgress = {
+          ...(settings.setupProgress || {}),
+          openingBalances: true
+        };
+        
+        await storage.updateGroupSettings(groupId, settings);
+        
+        return res.json({ success: true, settings });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Failed to save opening balances" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/groups/:groupId/setup-progress",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { groupId } = req.params;
+        const updates = req.body;
+        const groupSettings = await storage.getGroupSettings(groupId);
+        const settings = groupSettings ? groupSettings.settings : {};
+        
+        settings.setupProgress = {
+          ...(settings.setupProgress || {}),
+          ...updates
+        };
+        
+        await storage.updateGroupSettings(groupId, settings);
+        
+        return res.json({ success: true, settings });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Failed to update setup progress" });
       }
     }
   );
@@ -369,7 +533,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
       const members = await storage.getUsersByGroupId(groupId);
-      const safe = members.map(({ password: _p, ...u }) => u);
+      const safe = members.map(({ password: _p, ...u }) => ({
+        ...u,
+        isRegistered: _p !== "password123"
+      }));
       return res.json(safe);
     },
   );
@@ -518,19 +685,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Valid amount required" });
       const paymentMode = mode === "online" ? "online" : "cash";
       const user = req.currentUser!;
-      const payment = await storage.createPayment({
-        groupId,
-        memberId: user.id,
-        memberName: user.name,
-        amount: Number(amount),
-        expectedAmount: 0,
-        lateFee: 0,
-        month: "",
-        date: now(req),
-        mode: paymentMode,
-        status: paymentMode === "online" ? "pending_verification" : "pending",
-      });
-      return res.status(201).json(payment);
+      
+      const newStatus = paymentMode === "online" ? "pending_verification" : "pending";
+      
+      // Fetch user's pending payments ordered by oldest first
+      const allPayments = await storage.getPaymentsForMember(groupId, user.id);
+      const pendingRecords = allPayments
+        .filter(p => p.status === "payment_not_received")
+        .sort((a, b) => new Date(a.dueDate || a.date).getTime() - new Date(b.dueDate || b.date).getTime());
+
+      let remainingAmount = Number(amount);
+      let updatedPayments = [];
+
+      for (const p of pendingRecords) {
+        if (remainingAmount <= 0) break;
+        const required = (p.expectedAmount || 0) + (p.lateFee || 0);
+        if (remainingAmount >= required) {
+          // Fully pay this record
+          const updated = await storage.updatePayment(p.id, {
+            amount: required,
+            status: newStatus,
+            mode: paymentMode,
+            date: now(req)
+          });
+          updatedPayments.push(updated);
+          remainingAmount -= required;
+        } else {
+          // Partially pay this record
+          const updated = await storage.updatePayment(p.id, {
+            amount: remainingAmount,
+            status: newStatus,
+            mode: paymentMode,
+            date: now(req)
+          });
+          updatedPayments.push(updated);
+          remainingAmount = 0;
+        }
+      }
+
+      if (remainingAmount > 0 || pendingRecords.length === 0) {
+        // Overpayment or no pending records, create a new one
+        const payment = await storage.createPayment({
+          groupId,
+          memberId: user.id,
+          memberName: user.name,
+          amount: remainingAmount > 0 ? remainingAmount : Number(amount),
+          expectedAmount: 0,
+          lateFee: 0,
+          month: "",
+          date: now(req),
+          mode: paymentMode,
+          status: newStatus,
+        });
+        updatedPayments.push(payment);
+      }
+
+      return res.status(201).json(updatedPayments);
     },
   );
 
@@ -792,7 +1002,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const { amount, duration } = req.body;
+      const { amount, duration, memberId, isExisting, outstandingPrincipal, loanDate } = req.body;
       if (!amount || !duration)
         return res.status(400).json({ error: "Amount and duration required" });
 
@@ -800,7 +1010,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Validate SHG amount
       if (amount <= 0) return res.status(400).json({ error: "invalidAmount" });
-      if (amount > settings.maxLoanAmount)
+      if (!isExisting && amount > settings.maxLoanAmount)
         return res.status(400).json({ error: "exceedsMaxLoan" });
 
       // Validate SHG duration
@@ -817,27 +1027,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = req.currentUser!;
       const group = await storage.getGroupByGroupId(groupId);
-      const initialStatus = group?.treasurerId
-        ? "pending_treasurer"
-        : "pending_president";
+      
+      let targetMemberId = user.id;
+      let targetMemberName = user.name;
+      
+      if (memberId && (user.role === "president" || user.role === "treasurer")) {
+        const targetUser = await storage.getUserById(memberId);
+        if (targetUser && targetUser.groupId === groupId) {
+          targetMemberId = targetUser.id;
+          targetMemberName = targetUser.name;
+        }
+      }
+      
+      let initialStatus = group?.treasurerId ? "pending_treasurer" : "pending_president";
 
       const principal = Number(amount);
       const rate = settings.interestRate;
       const dur = Number(duration);
       const totalInterest = Math.round(principal * (rate / 100) * dur);
       const totalRepayable = principal + totalInterest;
-      const method = "reducing_balance"; // Default new loans to reducing balance
+      const method = "reducing_balance"; 
+      
+      let remainingBal = method === "reducing_balance" ? principal : totalRepayable;
+      if (isExisting) {
+        initialStatus = "approved";
+        remainingBal = Number(outstandingPrincipal) || principal;
+      }
 
       const loan = await storage.createLoan({
         groupId,
-        memberId: user.id,
-        memberName: user.name,
-        resolutionNo: "",
+        memberId: targetMemberId,
+        memberName: targetMemberName,
+        resolutionNo: isExisting ? "MIGRATED" : "",
         amount: principal,
         interest: rate,
         duration: dur,
         status: initialStatus,
-        createdAt: now(req),
+        createdAt: isExisting && loanDate ? new Date(loanDate) : now(req),
         hasBankLoan: false,
         bankId: undefined,
         bankName: undefined,
@@ -847,8 +1073,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         bankRemainingBalance: undefined,
         bankLoanRemarks: undefined,
         calculationMethod: method,
-        remainingBalance: method === "reducing_balance" ? principal : totalRepayable,
-        totalPrincipalPaid: 0,
+        remainingBalance: remainingBal,
+        totalPrincipalPaid: isExisting ? principal - remainingBal : 0,
         totalInterestPaid: 0,
         outstandingInterest: 0,
       } as any);
@@ -1296,20 +1522,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const { interestRate, maxLoanAmount, durationRules } = req.body;
-      if (
-        interestRate === undefined ||
-        maxLoanAmount === undefined ||
-        !durationRules
-      ) {
-        return res.status(400).json({ error: "Missing settings fields" });
+      
+      try {
+        const existingSettings = await storage.getGroupSettings(groupId);
+        const newSettings = { ...existingSettings, ...req.body };
+        await storage.updateGroupSettings(groupId, newSettings);
+        return res.json({ ok: true });
+      } catch (e) {
+        return res.status(500).json({ error: "Failed to update settings" });
       }
-      await storage.updateGroupSettings(groupId, {
-        interestRate,
-        maxLoanAmount,
-        durationRules,
-      });
-      return res.json({ ok: true });
     },
   );
 

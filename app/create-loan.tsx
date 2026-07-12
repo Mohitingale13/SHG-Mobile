@@ -213,7 +213,7 @@ export default function CreateLoanScreen() {
           )}
 
           {Number(amount) > 0 && Number(duration) > 0 && (
-            <View style={{ marginTop: 16, marginBottom: 16, padding: 16, backgroundColor: Colors.light.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}>
+            <View style={{ marginTop: 16, marginBottom: 16, padding: 16, backgroundColor: Colors.light.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border, elevation: 1, ...Platform.select({ web: { boxShadow: "0px 1px 2px rgba(0,0,0,0.05)" }, default: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 } }) }}>
 
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <Ionicons name="calculator" size={18} color={Colors.light.primary} />

@@ -17,7 +17,7 @@ export default function IndexScreen() {
         router.replace("/(main)");
       }
     } else {
-      router.replace("/(auth)/login");
+      router.replace("/(auth)/welcome");
     }
   }, [user, isLoading]);
 

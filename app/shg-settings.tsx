@@ -9,101 +9,28 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { useData, GroupSettings, DEFAULT_SETTINGS, AffiliatedBank } from "@/contexts/DataContext";
+import { useData, GroupSettings, DEFAULT_SETTINGS } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
 import { Modal } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 
 export default function ShgSettingsScreen() {
   const insets = useSafeAreaInsets();
   const { t, language } = useLanguage();
   const { group, isPresident } = useAuth();
-  const { groupSettings, updateGroupSettings, updateGroupInfo, affiliatedBanks, createBank, updateBank, deactivateBank } = useData();
+  const { groupSettings, updateGroupSettings, updateGroupInfo } = useData();
 
-  // Bank modal state
-  const [bankModalVisible, setBankModalVisible] = useState(false);
-  const [editingBank, setEditingBank] = useState<AffiliatedBank | null>(null);
-  const [bankName, setBankName] = useState("");
-  const [bankBranch, setBankBranch] = useState("");
-  const [bankIfsc, setBankIfsc] = useState("");
-  const [bankContact, setBankContact] = useState("");
-  const [bankPhone, setBankPhone] = useState("");
-  const [bankNotesVal, setBankNotesVal] = useState("");
-  const [bankSaving, setBankSaving] = useState(false);
-
-  const openBankModal = (bank?: AffiliatedBank) => {
-    setEditingBank(bank || null);
-    setBankName(bank?.name || "");
-    setBankBranch(bank?.branch || "");
-    setBankIfsc(bank?.ifscCode || "");
-    setBankContact(bank?.contactPerson || "");
-    setBankPhone(bank?.contactNumber || "");
-    setBankNotesVal(bank?.notes || "");
-    setBankModalVisible(true);
-  };
-
-  const handleSaveBank = async () => {
-    if (!bankName.trim()) {
-      Alert.alert(t("error"), t("bank.bank_name_required"));
-      return;
-    }
-    setBankSaving(true);
-    try {
-      if (editingBank) {
-        await updateBank(editingBank.id, {
-          name: bankName.trim(),
-          branch: bankBranch.trim() || undefined,
-          ifscCode: bankIfsc.trim() || undefined,
-          contactPerson: bankContact.trim() || undefined,
-          contactNumber: bankPhone.trim() || undefined,
-          notes: bankNotesVal.trim() || undefined,
-        });
-      } else {
-        await createBank({
-          groupId: group?.id || "",
-          name: bankName.trim(),
-          branch: bankBranch.trim() || undefined,
-          ifscCode: bankIfsc.trim() || undefined,
-          contactPerson: bankContact.trim() || undefined,
-          contactNumber: bankPhone.trim() || undefined,
-          notes: bankNotesVal.trim() || undefined,
-        });
-      }
-      setBankModalVisible(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e: any) {
-      Alert.alert(t("error"), e.message || t("error"));
-    } finally {
-      setBankSaving(false);
-    }
-  };
-
-  const handleDeactivateBank = (bank: AffiliatedBank) => {
-    Alert.alert(
-      t("bank.deactivate_bank"),
-      t("bank.deactivate_bank") + "?\n" + bank.name,
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("bank.deactivate_bank"), style: "destructive", onPress: async () => {
-            await deactivateBank(bank.id);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          }
-        },
-      ]
-    );
-  };
 
   const [groupName, setGroupName] = useState(group?.name || "");
   const [village, setVillage] = useState(group?.village || "");
   const [taluka, setTaluka] = useState(group?.taluka || "");
   const [district, setDistrict] = useState(group?.district || "");
-  const [prefLang, setPrefLang] = useState(group?.preferredLanguage || "mr");
 
   const [monthlyAmount, setMonthlyAmount] = useState(String(groupSettings.monthlyContributionAmount || 100));
   const [dueDay, setDueDay] = useState(String(groupSettings.contributionDueDay || 5));
   const [lateFee, setLateFee] = useState(String(groupSettings.lateFeeAmount || 10));
-  const [lateFeeType, setLateFeeType] = useState<"fixed" | "percentage">(groupSettings.lateFeeType || "fixed");
+  const [lateFeeType, setLateFeeType] = useState<"fixed" | "daily" | "none">(groupSettings.lateFeeType || "fixed");
   const [gracePeriod, setGracePeriod] = useState(String(groupSettings.gracePeriodDays || 5));
   const [saving, setSaving] = useState(false);
 
@@ -114,24 +41,29 @@ export default function ShgSettingsScreen() {
     const grace = parseInt(gracePeriod);
 
     if (!amount || amount <= 0) {
-      Alert.alert(t("error"), "Please enter a valid monthly contribution amount");
+      const msg = "Please enter a valid monthly contribution amount";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
     if (!dDay || dDay < 1 || dDay > 28) {
-      Alert.alert(t("error"), "Due day must be between 1 and 28");
+      const msg = "Due day must be between 1 and 28";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
     if (!fee || fee < 0) {
-      Alert.alert(t("error"), "Late fee must be 0 or greater");
+      const msg = "Late fee must be 0 or greater";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
     if (!grace || grace < 0) {
-      Alert.alert(t("error"), "Grace period must be 0 or greater");
+      const msg = "Grace period must be 0 or greater";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
 
     if (!groupName.trim()) {
-      Alert.alert(t("error"), "Group name is required");
+      const msg = "Group name is required";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
     setSaving(true);
@@ -141,11 +73,11 @@ export default function ShgSettingsScreen() {
         village: village.trim(),
         taluka: taluka.trim(),
         district: district.trim(),
-        preferredLanguage: prefLang,
       });
     } catch (e) {
       setSaving(false);
-      Alert.alert(t("error"), "Failed to update group information");
+      const msg = "Failed to update group information";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
 
@@ -160,7 +92,13 @@ export default function ShgSettingsScreen() {
     await updateGroupSettings(newSettings);
     setSaving(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert(t("success"), t("settingsSaved"), [{ text: "OK", onPress: () => router.back() }]);
+    
+    if (Platform.OS === "web") {
+      window.alert(t("settingsSaved") || "Settings saved successfully");
+      router.back();
+    } else {
+      Alert.alert(t("success"), t("settingsSaved") || "Settings saved successfully", [{ text: "OK", onPress: () => router.back() }]);
+    }
   };
 
   const handleReset = () => {
@@ -249,18 +187,6 @@ export default function ShgSettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("auto.language")}</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="language-outline" size={20} color={Colors.light.secondary} style={styles.inputIcon} />
-            <Pressable onPress={() => setPrefLang("mr")} style={[styles.input, { flex: 1, backgroundColor: prefLang === 'mr' ? Colors.light.primary : 'transparent', padding: 10, borderRadius: 8 }]}>
-              <Text style={{ color: prefLang === 'mr' ? '#fff' : Colors.light.text, textAlign: 'center' }}>{t("auto.mr")}</Text>
-            </Pressable>
-            <Pressable onPress={() => setPrefLang("en")} style={[styles.input, { flex: 1, backgroundColor: prefLang === 'en' ? Colors.light.primary : 'transparent', padding: 10, borderRadius: 8 }]}>
-              <Text style={{ color: prefLang === 'en' ? '#fff' : Colors.light.text, textAlign: 'center' }}>{t("auto.en")}</Text>
-            </Pressable>
-          </View>
-        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("settings.monthly_contribution")}</Text>
@@ -300,157 +226,77 @@ export default function ShgSettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("settings.grace_period_days")}</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="time-outline" size={20} color={Colors.light.secondary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              value={gracePeriod}
-              onChangeText={setGracePeriod}
-              keyboardType="number-pad"
-              placeholder="5"
-              placeholderTextColor={Colors.light.textMuted}
-            />
-            <Text style={styles.suffix}>{t("settings.days")}</Text>
-          </View>
-          <Text style={styles.fieldHint}>
-            Days allowed after due date before late fee is applied
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("settings.late_fee_setup")}</Text>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleText}>{t("settings.fixed_amount")}</Text>
-            <Switch
-              value={lateFeeType === "percentage"}
-              onValueChange={(val) => setLateFeeType(val ? "percentage" : "fixed")}
-              trackColor={{ false: Colors.light.primary, true: Colors.light.secondary }}
-            />
-            <Text style={styles.toggleText}>{t("settings.percentage")}</Text>
+          <Text style={styles.sectionTitle}>{t("settings.late_fee_setup") || "Late Fee Setup"}</Text>
+          <View style={[styles.inputContainer, { paddingHorizontal: 0, overflow: 'hidden' }]}>
+            <Picker
+              selectedValue={lateFeeType}
+              onValueChange={(val: any) => {
+                setLateFeeType(val);
+                if (val === "none") setLateFee("0");
+              }}
+              style={{ flex: 1, backgroundColor: 'transparent', color: Colors.light.text, borderWidth: 0, outline: 'none', paddingLeft: 16 }}
+            >
+              <Picker.Item label={t("settings.fixed_amount") || "Fixed Amount"} value="fixed" />
+              <Picker.Item label={t("settings.daily_amount") || "Daily Amount"} value="daily" />
+              <Picker.Item label={t("settings.no_late_fee") || "No Late Fee"} value="none" />
+            </Picker>
           </View>
 
-          <View style={[styles.inputContainer, { marginTop: 12 }]}>
-            {lateFeeType === "fixed" && <Text style={styles.rupee}>Rs.</Text>}
-            <TextInput
-              style={styles.input}
-              value={lateFee}
-              onChangeText={setLateFee}
-              keyboardType="number-pad"
-              placeholder="10"
-              placeholderTextColor={Colors.light.textMuted}
-            />
-            {lateFeeType === "percentage" && <Text style={styles.suffix}>{t("settings.percent_of_expected")}</Text>}
-          </View>
+          {lateFeeType !== "none" && (
+            <View style={[styles.inputContainer, { marginTop: 16 }]}>
+              {lateFeeType === "fixed" && <Text style={styles.rupee}>Rs.</Text>}
+              <TextInput
+                style={styles.input}
+                value={lateFee}
+                onChangeText={setLateFee}
+                keyboardType="number-pad"
+                placeholder={lateFeeType === "daily" ? "e.g. 5" : "e.g. 50"}
+                placeholderTextColor={Colors.light.textMuted}
+              />
+              {lateFeeType === "daily" && <Text style={styles.suffix}>{t("settings.per_day") || "/ day"}</Text>}
+            </View>
+          )}
         </View>
+
+        {lateFeeType !== "none" && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t("settings.grace_period_days")}</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="time-outline" size={20} color={Colors.light.secondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={gracePeriod}
+                onChangeText={setGracePeriod}
+                keyboardType="number-pad"
+                placeholder="5"
+                placeholderTextColor={Colors.light.textMuted}
+              />
+              <Text style={styles.suffix}>{t("settings.days")}</Text>
+            </View>
+            <Text style={styles.fieldHint}>
+              Days allowed after due date before late fee is applied
+            </Text>
+          </View>
+        )}
 
         <Pressable
           style={({ pressed }) => [styles.saveBtn, { opacity: pressed || saving ? 0.7 : 1 }]}
           onPress={handleSave}
           disabled={saving}
         >
-          <Text style={styles.saveBtnText}>{saving ? t("saving") : t("save")}</Text>
+          {saving ? (
+            <Text style={styles.saveBtnText}>{t("saving") || "Saving..."}</Text>
+          ) : (
+            <Text style={styles.saveBtnText}>{t("save") || "Save"}</Text>
+          )}
         </Pressable>
 
-        {/* ─── Affiliated Banks (President only) ─────────────────── */}
-        {isPresident && (
-          <View style={[styles.section, { marginTop: 32 }]}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <Text style={styles.sectionTitle}>{t("bank.affiliated_banks")}</Text>
-              <Pressable
-                onPress={() => openBankModal()}
-                style={({ pressed }) => [styles.addBankBtn, { opacity: pressed ? 0.7 : 1 }]}
-              >
-                <Ionicons name="add" size={18} color="#fff" />
-                <Text style={styles.addBankBtnText}>{t("bank.add_bank")}</Text>
-              </Pressable>
-            </View>
 
-            {affiliatedBanks.length === 0 ? (
-              <Text style={styles.emptyBanks}>{t("bank.no_banks_configured")}</Text>
-            ) : (
-              affiliatedBanks.map((bank) => (
-                <View key={bank.id} style={styles.bankCard}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Text style={styles.bankCardName}>{bank.name}</Text>
-                      <View style={[styles.bankBadge, { backgroundColor: bank.isActive ? "#22c55e20" : "#ef444420" }]}>
-                        <Text style={[styles.bankBadgeText, { color: bank.isActive ? "#22c55e" : "#ef4444" }]}>
-                          {bank.isActive ? t("bank.bank_active") : t("bank.bank_inactive")}
-                        </Text>
-                      </View>
-                    </View>
-                    {bank.branch ? <Text style={styles.bankCardSub}>{bank.branch}</Text> : null}
-                    {bank.ifscCode ? <Text style={styles.bankCardSub}>IFSC: {bank.ifscCode}</Text> : null}
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable onPress={() => openBankModal(bank)} style={styles.bankActionBtn}>
-                      <Ionicons name="pencil-outline" size={16} color={Colors.light.primary} />
-                    </Pressable>
-                    {bank.isActive && (
-                      <Pressable onPress={() => handleDeactivateBank(bank)} style={[styles.bankActionBtn, { backgroundColor: "#ef444420" }]}>
-                        <Ionicons name="close-circle-outline" size={16} color="#ef4444" />
-                      </Pressable>
-                    )}
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ─── Bank Modal ──────────────────────────────────────────── */}
-      <Modal visible={bankModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {editingBank ? t("bank.edit_bank") : t("bank.add_bank")}
-            </Text>
 
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {[
-                { label: t("bank.bank_name"), val: bankName, set: setBankName, req: true },
-                { label: t("bank.bank_branch"), val: bankBranch, set: setBankBranch },
-                { label: t("bank.ifsc_code"), val: bankIfsc, set: setBankIfsc },
-                { label: t("bank.contact_person"), val: bankContact, set: setBankContact },
-                { label: t("bank.contact_number"), val: bankPhone, set: setBankPhone, keyboard: "phone-pad" },
-                { label: t("bank.bank_notes"), val: bankNotesVal, set: setBankNotesVal, multiline: true },
-              ].map((field) => (
-                <View key={field.label} style={{ marginBottom: 12 }}>
-                  <Text style={styles.modalLabel}>{field.label}{field.req ? " *" : ""}</Text>
-                  <TextInput
-                    style={[styles.modalInput, field.multiline && { height: 80, textAlignVertical: "top" }]}
-                    value={field.val}
-                    onChangeText={field.set}
-                    keyboardType={field.keyboard || "default"}
-                    multiline={!!field.multiline}
-                    placeholderTextColor={Colors.light.textMuted}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
-              <Pressable
-                style={[styles.modalBtn, { backgroundColor: Colors.light.card, flex: 1 }]}
-                onPress={() => setBankModalVisible(false)}
-              >
-                <Text style={[styles.modalBtnText, { color: Colors.light.text }]}>{t("common.cancel")}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalBtn, { backgroundColor: Colors.light.primary, flex: 1, opacity: bankSaving ? 0.7 : 1 }]}
-                onPress={handleSaveBank}
-                disabled={bankSaving}
-              >
-                <Text style={styles.modalBtnText}>{bankSaving ? t("saving") : t("save")}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }

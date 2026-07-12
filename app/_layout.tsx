@@ -21,7 +21,8 @@ import {
 SplashScreen.preventAutoHideAsync();
 LogBox.ignoreLogs([
   "props.pointerEvents is deprecated",
-  "Support for defaultProps will be removed from function components"
+  "Support for defaultProps will be removed from function components",
+  "\"shadow*\" style props are deprecated. Use \"boxShadow\"."
 ]);
 
 function RootLayoutNav() {

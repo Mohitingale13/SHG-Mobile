@@ -31,6 +31,9 @@ export interface Payment {
   memberName: string;
   amount: number;
   expectedAmount?: number;
+  lateFee?: number;
+  month?: string;
+  dueDate?: string;
   date: string;
   mode: PaymentMode;
   status: PaymentStatus;
@@ -208,7 +211,19 @@ export interface GroupSettings {
   contributionDueDay?: number;
   gracePeriodDays?: number;
   lateFeeAmount?: number;
-  lateFeeType?: "fixed" | "percentage";
+  lateFeeType?: "fixed" | "daily" | "none";
+  openingBalances?: {
+    openingDate: string;
+    totalSavings: number;
+    cashInHand: number;
+    bankBalance: number;
+  };
+  setupProgress?: {
+    openingBalances?: boolean;
+    members?: boolean;
+    internalLoans?: boolean;
+    bankLoans?: boolean;
+  };
 }
 
 export const DEFAULT_SETTINGS: GroupSettings = {
@@ -403,9 +418,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const declarePayment = useCallback(async (amount: number, mode: PaymentMode = "cash") => {
     if (!user?.groupId) return;
-    const payment = await apiPost<Payment>(`/api/groups/${user.groupId}/payments`, { amount, mode });
-    setPayments((prev) => [...prev, payment]);
-  }, [user?.groupId]);
+    await apiPost(`/api/groups/${user.groupId}/payments`, { amount, mode });
+    await loadData();
+  }, [user?.groupId, loadData]);
 
   const verifyPayment = useCallback(async (id: string, status: PaymentStatus, reason?: string) => {
     const updated = await apiPatch<Payment>(`/api/payments/${id}`, { status, reason });

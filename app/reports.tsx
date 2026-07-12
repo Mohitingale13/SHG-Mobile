@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
   dropdownPlaceholder: { fontSize: 14, color: Colors.light.textMuted, fontFamily: "Poppins_400Regular" },
   
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 },
-  dropdownMenu: { width: "100%", backgroundColor: "#fff", borderRadius: 12, padding: 8, maxHeight: "80%", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 },
+  dropdownMenu: { width: "100%", backgroundColor: "#fff", borderRadius: 12, padding: 8, maxHeight: "80%", elevation: 5, ...Platform.select({ web: { boxShadow: "0px 4px 12px rgba(0,0,0,0.1)" }, default: { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } }) },
   dropdownItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8 },
   dropdownItemSelected: { backgroundColor: Colors.light.primary + "15" },
   dropdownItemText: { fontSize: 15, color: Colors.light.text, fontFamily: "Poppins_400Regular" },

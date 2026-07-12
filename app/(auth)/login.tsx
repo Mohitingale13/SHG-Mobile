@@ -24,12 +24,22 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!phone.trim() || !password.trim()) {
       Keyboard.dismiss();
-      Alert.alert(t("error"), t("validation.fill_all_fields"));
+      const msg = t("validation.fill_all_fields");
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert(t("error"), msg);
+      }
       return;
     }
     if (phone.trim().length !== 10) {
       Keyboard.dismiss();
-      Alert.alert(t("error"), t("validation.phone_10_digits"));
+      const msg = t("validation.phone_10_digits");
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert(t("error"), msg);
+      }
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -37,14 +47,21 @@ export default function LoginScreen() {
     const result = await login(phone.trim(), password);
     setLoading(false);
     if (result.success) {
-      if (result.role === "super_admin") {
+      if (password === "password123") {
+        router.replace("/(auth)/change-password");
+      } else if (result.role === "super_admin") {
         router.replace("/(super-admin)" as any);
       } else {
         router.replace("/(main)");
       }
     } else {
       Keyboard.dismiss();
-      Alert.alert(t("error"), t(result.error || "error"));
+      const errorMsg = t(result.error || "error");
+      if (Platform.OS === "web") {
+        window.alert(errorMsg);
+      } else {
+        Alert.alert(t("error"), errorMsg);
+      }
     }
   };
 

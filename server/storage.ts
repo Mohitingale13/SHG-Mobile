@@ -223,7 +223,7 @@ export interface GroupSettings {
   monthlyContributionAmount: number;
   contributionDueDay: number;
   lateFeeAmount: number;
-  lateFeeType: "fixed" | "percentage";
+  lateFeeType: "fixed" | "daily" | "none";
   gracePeriodDays: number;
 }
 
@@ -263,6 +263,7 @@ export interface IStorage {
   getAllGroups(): Promise<Group[]>;
   createGroup(group: Omit<Group, "id">): Promise<Group>;
   updateGroup(groupId: string, data: Partial<Group>): Promise<Group | undefined>;
+  deleteGroup(groupId: string): Promise<void>;
 
   getMeetingsByGroupId(groupId: string): Promise<Meeting[]>;
   getMeetingById(id: string): Promise<Meeting | undefined>;
@@ -425,6 +426,13 @@ export class MemStorage implements IStorage {
     const updated = { ...group, ...data };
     this.groups.set(group.id, updated);
     return updated;
+  }
+
+  async deleteGroup(groupId: string): Promise<void> {
+    const group = Array.from(this.groups.values()).find((g) => g.groupId === groupId);
+    if (group) {
+      this.groups.delete(group.id);
+    }
   }
 
   async getMeetingsByGroupId(groupId: string): Promise<Meeting[]> {
@@ -672,7 +680,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllGroups(): Promise<Group[]> {
-    const rows = await this.db.select().from(schema.groups);
+    const rows = await this.db.select().from(schema.groups).orderBy(desc(schema.groups.createdAt));
     return rows as Group[];
   }
 
@@ -685,6 +693,58 @@ export class DatabaseStorage implements IStorage {
   async updateGroup(groupId: string, data: Partial<Group>): Promise<Group | undefined> {
     await this.db.update(schema.groups).set(data).where(eq(schema.groups.groupId, groupId));
     return this.getGroupByGroupId(groupId);
+  }
+
+  async deleteGroup(groupId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      // 1. Group Bank Loans
+      const groupBankLoans = await tx.select({ id: schema.groupBankLoans.id }).from(schema.groupBankLoans).where(eq(schema.groupBankLoans.groupId, groupId));
+      const groupBankLoanIds = groupBankLoans.map(l => l.id);
+      
+      if (groupBankLoanIds.length > 0) {
+        const allocations = await tx.select({ id: schema.bankLoanAllocations.id }).from(schema.bankLoanAllocations).where(inArray(schema.bankLoanAllocations.bankLoanId, groupBankLoanIds));
+        const allocationIds = allocations.map(a => a.id);
+        
+        if (allocationIds.length > 0) {
+          await tx.delete(schema.bankLoanLedger).where(inArray(schema.bankLoanLedger.allocationId, allocationIds));
+          await tx.delete(schema.bankLoanRepayments).where(inArray(schema.bankLoanRepayments.allocationId, allocationIds));
+        }
+        await tx.delete(schema.bankLoanAllocations).where(inArray(schema.bankLoanAllocations.bankLoanId, groupBankLoanIds));
+      }
+      await tx.delete(schema.groupBankLoans).where(eq(schema.groupBankLoans.groupId, groupId));
+      await tx.delete(schema.affiliatedBanks).where(eq(schema.affiliatedBanks.groupId, groupId));
+      
+      // 2. Internal Loans
+      const loans = await tx.select({ id: schema.loans.id }).from(schema.loans).where(eq(schema.loans.groupId, groupId));
+      const loanIds = loans.map(l => l.id);
+      
+      if (loanIds.length > 0) {
+        await tx.delete(schema.loanLedger).where(inArray(schema.loanLedger.loanId, loanIds));
+        await tx.delete(schema.loanRepayments).where(inArray(schema.loanRepayments.loanId, loanIds));
+      }
+      await tx.delete(schema.loans).where(eq(schema.loans.groupId, groupId));
+      
+      // 3. Other Group Records
+      await tx.delete(schema.payments).where(eq(schema.payments.groupId, groupId));
+      await tx.delete(schema.meetings).where(eq(schema.meetings.groupId, groupId));
+      
+      const invCodes = await tx.select({ id: schema.invitationCodes.id }).from(schema.invitationCodes).where(eq(schema.invitationCodes.groupId, groupId));
+      const invCodeIds = invCodes.map(i => i.id);
+      if (invCodeIds.length > 0) {
+        await tx.delete(schema.invitationCodeUsage).where(inArray(schema.invitationCodeUsage.invitationCodeId, invCodeIds));
+      }
+      await tx.delete(schema.invitationCodes).where(eq(schema.invitationCodes.groupId, groupId));
+      
+      const users = await tx.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.groupId, groupId));
+      const userIds = users.map(u => u.id);
+      if (userIds.length > 0) {
+        await tx.delete(schema.sessions).where(inArray(schema.sessions.userId, userIds));
+      }
+      
+      await tx.delete(schema.users).where(eq(schema.users.groupId, groupId));
+      await tx.delete(schema.groupSettings).where(eq(schema.groupSettings.groupId, groupId));
+      await tx.delete(schema.groups).where(eq(schema.groups.groupId, groupId));
+    });
   }
 
   async getMeetingsByGroupId(groupId: string): Promise<Meeting[]> {

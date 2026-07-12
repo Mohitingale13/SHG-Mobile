@@ -104,9 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback((u: User, g: Group) => {
     setUser(u);
     setGroup(g);
-    // Resolve language priority: user > group > "en"
-    const lang = getEffectiveLanguage(u, g);
-    setLanguageRef.current(lang as Language);
+    // Resolve language priority: user > group > keep current UI language
+    if (u.preferredLanguage) {
+      setLanguageRef.current(u.preferredLanguage as Language);
+    } else if (g.preferredLanguage) {
+      setLanguageRef.current(g.preferredLanguage as Language);
+    }
   }, []);
 
   // ── Session restore ────────────────────────────────────────────────────────

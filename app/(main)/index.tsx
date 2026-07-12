@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform, RefreshControl, Animated } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, RefreshControl, Animated, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -15,11 +15,13 @@ function StatCard({ icon, label, value, color, onPress }: { icon: string; label:
   return (
     <Pressable style={[styles.statCard, { borderLeftColor: color }]} onPress={onPress}>
       <View style={styles.statCardHeader}>
-        <Ionicons name={icon as any} size={22} color={color} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+          <Ionicons name={icon as any} size={16} color={color} />
+          <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
+        </View>
         {onPress && <Ionicons name="chevron-forward" size={14} color={Colors.light.textMuted} />}
       </View>
       <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -232,76 +234,113 @@ export default function DashboardScreen() {
   const contributionReminder = useMemo(() => {
     if (isPresident || isTreasurer || !user) return null;
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
 
-    // Find all payments by this member for the current month
-    const thisMonthPayments = payments.filter(
-      (p) => p.memberId === user.id &&
-        new Date(p.date).getMonth() === currentMonth &&
-        new Date(p.date).getFullYear() === currentYear
-    );
-
-    // ---- State: confirmed — hide card ----
-    const confirmed = thisMonthPayments.find(
-      (p) => p.status === "confirmed"
-    );
-    if (confirmed) return null;
-
-    // ---- State: submitted — awaiting verification ----
-    const submitted = thisMonthPayments.find(
-      (p) => p.status === "pending" || p.status === "pending_verification"
-    );
-    if (submitted) {
-      return { state: "submitted" as const, payment: submitted };
+    // Find all unpaid payments for this member
+    const unpaidRecords = payments.filter((p) => p.memberId === user.id && p.status === "payment_not_received");
+    
+    // If no unpaid records, maybe they submitted something recently
+    if (unpaidRecords.length === 0) {
+      const submitted = payments.find((p) => p.memberId === user.id && (p.status === "pending" || p.status === "pending_verification"));
+      if (submitted) {
+        return { state: "submitted" as const, payment: submitted };
+      }
+      const rejected = payments.find((p) => p.memberId === user.id && p.status === "rejected");
+      if (rejected) {
+        return { state: "rejected" as const, payment: rejected };
+      }
+      return null; // Fully paid up
     }
 
-    // ---- State: rejected ----
-    const rejected = thisMonthPayments.find(
-      (p) => p.status === "rejected" || p.status === "payment_not_received"
-    );
-    if (rejected) {
-      return { state: "rejected" as const, payment: rejected };
-    }
-
-    // ---- State: pending — nothing submitted yet ----
     const dueDay = groupSettings.contributionDueDay ?? 5;
     const graceDays = groupSettings.gracePeriodDays ?? 5;
-    const monthlyAmount = groupSettings.monthlyContributionAmount ?? 0;
     const lateFeeAmount = groupSettings.lateFeeAmount ?? 0;
     const lateFeeType = groupSettings.lateFeeType ?? "fixed";
+    
+    let totalExpected = 0;
+    let totalLateFee = 0;
+    let maxOverdueDays = 0;
+    let hasOverdue = false;
+    let hasWithinGrace = false;
+    
+    // Use the oldest due date for display
+    let oldestDueDate = now;
 
-    const dueDate = new Date(currentYear, currentMonth, dueDay);
-    const diffMs = dueDate.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    const isOverdue = diffDays < 0;
-    const overdueBy = isOverdue ? Math.abs(diffDays) : 0;
-    const withinGrace = isOverdue && overdueBy <= graceDays;
+    for (const p of unpaidRecords) {
+      totalExpected += p.expectedAmount || groupSettings.monthlyContributionAmount || 0;
+      
+      let pDueDate = p.dueDate ? new Date(p.dueDate) : null;
+      if (!pDueDate && p.month) {
+        const [y, m] = p.month.split('-');
+        pDueDate = new Date(parseInt(y), parseInt(m) - 1, dueDay);
+      }
+      if (!pDueDate) pDueDate = new Date(); // fallback
+      
+      if (pDueDate < oldestDueDate) oldestDueDate = pDueDate;
 
-    let applicableLateFee = 0;
-    if (isOverdue && !withinGrace && monthlyAmount > 0) {
-      applicableLateFee = lateFeeType === "percentage"
-        ? Math.round((monthlyAmount * lateFeeAmount) / 100)
-        : lateFeeAmount;
+      const diffMs = now.getTime() - pDueDate.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 0) {
+        hasOverdue = true;
+        if (diffDays > maxOverdueDays) maxOverdueDays = diffDays;
+        
+        if (diffDays <= graceDays) {
+          hasWithinGrace = true;
+        } else {
+          // Calculate late fee for THIS missed installment
+          if (lateFeeType === "daily") {
+            totalLateFee += diffDays * lateFeeAmount;
+          } else if (lateFeeType === "fixed") {
+            totalLateFee += lateFeeAmount;
+          }
+        }
+      } else {
+        // Not yet due
+        hasWithinGrace = true; 
+      }
     }
+    
+    // Re-calculate the remaining days based on the oldest due date, just for UI if not overdue yet
+    const diffMs = oldestDueDate.getTime() - now.getTime();
+    const remainingDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
     return {
       state: "pending" as const,
-      dueDate,
-      diffDays,
-      isOverdue,
-      overdueBy,
-      withinGrace,
-      monthlyAmount,
-      applicableLateFee,
-      totalPayable: monthlyAmount + applicableLateFee,
+      monthsCount: unpaidRecords.length,
+      dueDate: oldestDueDate,
+      diffDays: remainingDays,
+      isOverdue: hasOverdue,
+      overdueBy: maxOverdueDays,
+      withinGrace: hasWithinGrace,
+      monthlyAmount: totalExpected,
+      applicableLateFee: totalLateFee,
+      totalPayable: totalExpected + totalLateFee,
     };
   }, [user, payments, groupSettings, isPresident, isTreasurer]);
 
   // ── Loan Reminder (members only) ───────────
   const loanReminder = useMemo(() => {
     if (isPresident || isTreasurer || !user) return null;
-    const active = loans.filter((l) => l.memberId === user.id && l.status === "approved" && l.remainingBalance > 0);
+    const now = new Date();
+    const active = loans.filter((l) => {
+      if (l.memberId !== user.id || l.status !== "approved" || l.remainingBalance <= 0) return false;
+      
+      // If the loan was approved this exact same month, no installment is due yet (1 month grace period)
+      if (l.approvedAt) {
+        const approvedDate = new Date(l.approvedAt);
+        if (approvedDate.getMonth() === now.getMonth() && approvedDate.getFullYear() === now.getFullYear()) {
+          return false;
+        }
+      }
+
+      // Check if they already made a repayment this month
+      const paidThisMonth = loanRepayments.some(r => 
+        r.loanId === l.id && 
+        new Date(r.date).getMonth() === now.getMonth() && 
+        new Date(r.date).getFullYear() === now.getFullYear()
+      );
+      return !paidThisMonth;
+    });
     if (active.length === 0) return null;
 
     if (active.length === 1) {
@@ -330,7 +369,7 @@ export default function DashboardScreen() {
         totalRecommended
       };
     }
-  }, [loans, user, isPresident, isTreasurer]);
+  }, [loans, loanRepayments, user, isPresident, isTreasurer]);
 
   useEffect(() => {
     const checkLoanDismissal = async () => {
@@ -513,324 +552,332 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        <View style={styles.statsGrid}>
-          <StatCard icon="people" label={t("totalMembers")} value={activeMembers.length} color={Colors.light.secondary} onPress={() => router.push("/members")} />
-          <StatCard icon="calendar" label={t("upcomingMeeting")} value={upcomingMeetings.length} color={Colors.light.primary} onPress={() => router.push("/(main)/meetings")} />
-          <StatCard icon="time" label={t("pendingPayments")} value={pendingPayments.length} color={Colors.light.pending} onPress={() => router.push("/(main)/payments")} />
-          <StatCard icon="cash" label={t("activeLoans")} value={activeLoans.length} color={Colors.light.danger} onPress={() => router.push("/loans")} />
-        </View>
-
-        {/* ── Contribution Reminder Card — full lifecycle ── */}
-        {contributionReminder !== null && (
-          <View style={{ marginBottom: 20 }}>
-
-            {/* ────── STATE: pending ────── */}
-            {contributionReminder.state === "pending" && (() => {
-              const r = contributionReminder;
-              const isHot = r.isOverdue && !r.withinGrace;
-              return (
-                <>
-                  <View style={[
-                    styles.reminderCard,
-                    isHot ? styles.reminderCardOverdue : styles.reminderCardPending,
-                    { marginBottom: 0 },
-                  ]}>
-                    <View style={styles.reminderHeader}>
-                      <View style={[styles.reminderIconWrap,
-                      { backgroundColor: isHot ? Colors.light.danger + "20" : "#F59E0B20" }]}>
-                        <Ionicons
-                          name={isHot ? "alert-circle" : "time"}
-                          size={20}
-                          color={isHot ? Colors.light.danger : "#D97706"}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.reminderTitle, { color: isHot ? Colors.light.danger : "#92400E" }]}>
-                          {t("reminder.contribution_pending_title")}
-                        </Text>
-                        <Text style={styles.reminderSubtitle}>
-                          {r.isOverdue
-                            ? r.withinGrace
-                              ? t("reminder.within_grace")
-                              : `${t("reminder.overdue_by")} ${r.overdueBy} ${t("reminder.days")}`
-                            : `${r.diffDays} ${t("reminder.days_remaining")}`}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.reminderDetails}>
-                      <View style={styles.reminderDetailRow}>
-                        <Text style={styles.reminderDetailLabel}>{t("reminder.contribution_amount")}</Text>
-                        <Text style={styles.reminderDetailValue}>Rs. {r.monthlyAmount.toLocaleString("en-IN")}</Text>
-                      </View>
-                      <View style={styles.reminderDetailRow}>
-                        <Text style={styles.reminderDetailLabel}>{t("reminder.due_date")}</Text>
-                        <Text style={styles.reminderDetailValue}>
-                          {r.dueDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                        </Text>
-                      </View>
-                      {r.applicableLateFee > 0 && (
-                        <View style={styles.reminderDetailRow}>
-                          <Text style={styles.reminderDetailLabel}>{t("reminder.late_fee_applicable")}</Text>
-                          <Text style={[styles.reminderDetailValue, { color: Colors.light.danger }]}>
-                            Rs. {r.applicableLateFee.toLocaleString("en-IN")}
-                          </Text>
-                        </View>
-                      )}
-                      {r.applicableLateFee === 0 && r.isOverdue && (
-                        <View style={styles.reminderDetailRow}>
-                          <Text style={styles.reminderDetailLabel}>{t("reminder.late_fee_applicable")}</Text>
-                          <Text style={[styles.reminderDetailValue, { color: Colors.light.success }]}>
-                            {t("reminder.no_late_fee")}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={[styles.reminderDetailRow, styles.reminderTotalRow]}>
-                        <Text style={styles.reminderTotalLabel}>{t("reminder.total_payable")}</Text>
-                        <Text style={styles.reminderTotalValue}>Rs. {r.totalPayable.toLocaleString("en-IN")}</Text>
-                      </View>
-                    </View>
-
-                    <Pressable
-                      style={styles.reminderPayBtn}
-                      onPress={() => router.push("/(main)/payments")}
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="arrow-forward-circle" size={18} color="#fff" />
-                      <Text style={styles.reminderPayBtnText}>{t("reminder.pay_now")}</Text>
-                    </Pressable>
-                  </View>
-                </>
-              );
-            })()}
-
-            {/* ────── STATE: submitted ────── */}
-            {contributionReminder.state === "submitted" && (() => {
-              const p = contributionReminder.payment;
-              return (
-                <View style={[styles.reminderCard, styles.reminderCardSubmitted, { marginBottom: 0 }]}>
-                  <View style={styles.reminderHeader}>
-                    <View style={[styles.reminderIconWrap, { backgroundColor: Colors.light.primary + "18" }]}>
-                      <Ionicons name="hourglass-outline" size={20} color={Colors.light.primary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.reminderTitle, { color: Colors.light.primary }]}>
-                        {t("reminder.submitted_title")}
-                      </Text>
-                      <Text style={styles.reminderSubtitle}>{t("reminder.submitted_subtitle")}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.reminderDetails}>
-                    <View style={styles.reminderDetailRow}>
-                      <Text style={styles.reminderDetailLabel}>{t("reminder.submitted_amount")}</Text>
-                      <Text style={styles.reminderDetailValue}>Rs. {p.amount.toLocaleString("en-IN")}</Text>
-                    </View>
-                    <View style={styles.reminderDetailRow}>
-                      <Text style={styles.reminderDetailLabel}>{t("reminder.submitted_on")}</Text>
-                      <Text style={styles.reminderDetailValue}>
-                        {new Date(p.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                      </Text>
-                    </View>
-                    <View style={styles.reminderDetailRow}>
-                      <Text style={styles.reminderDetailLabel}>{t("reminder.payment_method")}</Text>
-                      <Text style={styles.reminderDetailValue}>{t(p.mode)}</Text>
-                    </View>
-                  </View>
-
-                  <Pressable
-                    style={[styles.reminderPayBtn, { backgroundColor: Colors.light.primary }]}
-                    onPress={() => router.push("/(main)/payments")}
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="eye-outline" size={18} color="#fff" />
-                    <Text style={styles.reminderPayBtnText}>{t("reminder.view_payment")}</Text>
-                  </Pressable>
+        {isPresident && groupSettings?.openingBalances && (
+          !groupSettings?.setupProgress?.internalLoans || !groupSettings?.setupProgress?.bankLoans
+        ) && (
+          <View style={{ backgroundColor: "#F0F9FF", borderWidth: 1, borderColor: "#BAE6FD", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <Ionicons name="information-circle" size={20} color="#0369A1" />
+              <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 16, color: "#0369A1" }}>
+                Complete Existing SHG Setup
+              </Text>
+            </View>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#075985", marginBottom: 12, lineHeight: 20 }}>
+              You can continue using the application now. Complete the remaining setup whenever you are ready.
+            </Text>
+            <View style={{ marginBottom: 16, gap: 4 }}>
+              {!groupSettings?.setupProgress?.internalLoans && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="ellipse" size={5} color="#0369A1" />
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#0369A1" }}>Active Internal Loans</Text>
                 </View>
-              );
-            })()}
-
-            {/* ────── STATE: rejected ────── */}
-            {contributionReminder.state === "rejected" && (() => {
-              const p = contributionReminder.payment;
-              return (
-                <View style={[styles.reminderCard, styles.reminderCardOverdue, { marginBottom: 0 }]}>
-                  <View style={styles.reminderHeader}>
-                    <View style={[styles.reminderIconWrap, { backgroundColor: Colors.light.danger + "20" }]}>
-                      <Ionicons name="close-circle" size={20} color={Colors.light.danger} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.reminderTitle, { color: Colors.light.danger }]}>
-                        {t("reminder.rejected_title")}
-                      </Text>
-                      <Text style={styles.reminderSubtitle}>
-                        {new Date(p.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Rejection reason */}
-                  <View style={styles.reminderRejectionBox}>
-                    <Text style={styles.reminderRejectionLabel}>{t("reminder.rejection_reason_label")}</Text>
-                    <Text style={styles.reminderRejectionText}>
-                      {p.rejectionReason?.trim() || t("reminder.no_reason_given")}
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    style={[styles.reminderPayBtn, { backgroundColor: Colors.light.danger }]}
-                    onPress={() => router.push("/(main)/payments")}
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="refresh" size={18} color="#fff" />
-                    <Text style={styles.reminderPayBtnText}>{t("reminder.resubmit")}</Text>
-                  </Pressable>
+              )}
+              {!groupSettings?.setupProgress?.bankLoans && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="ellipse" size={5} color="#0369A1" />
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#0369A1" }}>Active Group Bank Loans</Text>
                 </View>
-              );
-            })()}
-
+              )}
+            </View>
+            <Pressable 
+              style={{ backgroundColor: "#0284C7", alignSelf: "flex-start", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 }}
+              onPress={() => Alert.alert("Setup", "Navigation to loan setup screens will be implemented here.")}
+            >
+              <Text style={{ color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 13 }}>Continue Setup</Text>
+            </Pressable>
           </View>
         )}
 
+        {/* ── Stat Grid – President/Treasurer only ── */}
+        {(isPresident || isTreasurer) && (
+          <View style={styles.statsGrid}>
+            <StatCard icon="people" label={t("totalMembers")} value={activeMembers.length} color={Colors.light.secondary} onPress={() => router.push("/members")} />
+            <StatCard icon="calendar" label={t("upcomingMeeting")} value={upcomingMeetings.length} color={Colors.light.primary} onPress={() => router.push("/(main)/meetings")} />
+            <StatCard icon="time" label={t("pendingPayments")} value={pendingPayments.length} color={Colors.light.pending} onPress={() => router.push("/(main)/payments")} />
+            <StatCard icon="cash" label={t("activeLoans")} value={activeLoans.length} color={Colors.light.danger} onPress={() => router.push("/loans")} />
+          </View>
+        )}
 
+        {/* ── PERSONAL ACTION REQUIRED (Disposable Card) ── */}
+        {user && (() => {
+          const now = new Date();
+          const myConfirmedThisMonth = payments.find(
+            p => p.memberId === user.id && p.status === "confirmed" &&
+            new Date(p.date).getMonth() === now.getMonth() &&
+            new Date(p.date).getFullYear() === now.getFullYear()
+          );
+          const myPendingPayment = payments.find(
+            p => p.memberId === user.id && (p.status === "pending" || p.status === "pending_verification")
+          );
+          const myUnpaid = payments.filter(p => p.memberId === user.id && p.status === "payment_not_received");
+          const nextMeeting = upcomingMeetings[0];
+          const myLoanForReminder = loanReminder?.type === "single" ? loanReminder : null;
 
-        
-        {/* ────── LOAN REPAYMENT REMINDER ────── */}
-        {loanReminder && !dismissedLoan && (
-          <View style={styles.section}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={styles.sectionTitle}>{t("dashboard.monthly_loan_reminder")}</Text>
-              <Pressable onPress={dismissLoanCard} style={{ padding: 4 }}>
-                <Text style={{ color: Colors.light.textMuted, fontSize: 13 }}>{t("dashboard.dismiss")}</Text>
-              </Pressable>
-            </View>
+          const hasActionRequired = myUnpaid.length > 0 || (!myConfirmedThisMonth && !myPendingPayment) || myLoanForReminder;
 
-            {loanReminder.type === 'single' ? (
-              <View style={[styles.reminderCard, { borderLeftColor: Colors.light.primary }]}>
-                <View style={styles.reminderHeader}>
-                  <View style={[styles.reminderIconWrap, { backgroundColor: Colors.light.primary + "20" }]}>
-                    <Ionicons name="cash-outline" size={20} color={Colors.light.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.reminderTitle}>
-                      {t("history.loan_repayment")}
-                    </Text>
-                    <Text style={styles.reminderSubtitle}>
-                      {t("history.remaining_principal")}: Rs. {(loanReminder.outstandingPrincipal || 0).toLocaleString("en-IN")}
-                    </Text>
+          // For President/Treasurer: strictly disposable, only show if action required
+          if ((isPresident || isTreasurer) && !hasActionRequired) {
+            return null;
+          }
+
+          let savingsStatusLabel = "";
+          let savingsStatusColor = Colors.light.textMuted;
+          let savingsStatusIcon = "help-circle-outline";
+
+          if (myConfirmedThisMonth) {
+            savingsStatusLabel = t("dashboard.paid");
+            savingsStatusColor = Colors.light.success;
+            savingsStatusIcon = "checkmark-circle";
+          } else if (myPendingPayment) {
+            savingsStatusLabel = t("dashboard.awaiting_verification");
+            savingsStatusColor = Colors.light.pending;
+            savingsStatusIcon = "hourglass-outline";
+          } else if (myUnpaid.length > 0) {
+            savingsStatusLabel = t("dashboard.overdue");
+            savingsStatusColor = Colors.light.danger;
+            savingsStatusIcon = "alert-circle";
+          } else {
+            savingsStatusLabel = t("pending");
+            savingsStatusColor = Colors.light.pending;
+            savingsStatusIcon = "time-outline";
+          }
+
+          const monthlyAmount = groupSettings?.monthlyContributionAmount || 0;
+          const lateFeeThisMonth = myUnpaid.reduce((s, p) => s + (p.lateFee || 0), 0) +
+            (myConfirmedThisMonth?.lateFee || 0);
+
+          return (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="calendar-outline" size={16} color={Colors.light.primary} />
+                  <Text style={styles.sectionTitle}>
+                    {(isPresident || isTreasurer) ? (t("dashboard.my_dues") || "My Personal Dues") : t("dashboard.this_month")}
+                  </Text>
+                </View>
+              </View>
+              <View style={[styles.memberThisMonthCard, { borderLeftColor: savingsStatusColor }]}>
+                {/* Savings Status */}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={styles.memberThisMonthLabel}>{t("dashboard.savings_status")}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name={savingsStatusIcon as any} size={16} color={savingsStatusColor} />
+                    <Text style={[styles.memberThisMonthBadge, { color: savingsStatusColor }]}>{savingsStatusLabel}</Text>
                   </View>
                 </View>
-                <View style={styles.reminderDetails}>
-                  <View style={styles.reminderDetailRow}>
-                    <Text style={styles.reminderDetailLabel}>{t("recommended_monthly_payment")}</Text>
-                    <Text style={[styles.reminderDetailValue, { color: Colors.light.primary, fontWeight: 'bold' }]}>
-                      Rs. {(loanReminder.recommendedPayment || 0).toLocaleString("en-IN")}
+                {/* Monthly Amount */}
+                {monthlyAmount > 0 && (
+                  <View style={styles.memberThisMonthRow}>
+                    <Text style={styles.memberThisMonthLabel}>{myConfirmedThisMonth ? t("dashboard.savings_collected") : t("dashboard.savings_to_be_collected")}</Text>
+                    <Text style={styles.memberThisMonthValue}>Rs. {monthlyAmount.toLocaleString("en-IN")}</Text>
+                  </View>
+                )}
+                {/* Late Fee */}
+                {lateFeeThisMonth > 0 && (
+                  <View style={styles.memberThisMonthRow}>
+                    <Text style={[styles.memberThisMonthLabel, { color: Colors.light.danger }]}>{t("dashboard.late_fees_collected")}</Text>
+                    <Text style={[styles.memberThisMonthValue, { color: Colors.light.danger }]}>+ Rs. {lateFeeThisMonth.toLocaleString("en-IN")}</Text>
+                  </View>
+                )}
+                {/* Loan Installment */}
+                {myLoanForReminder && (
+                  <View style={[styles.memberThisMonthRow, { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 8, marginTop: 4 }]}>
+                    <Text style={[styles.memberThisMonthLabel, { color: Colors.light.primary }]}>{t("dashboard.loan_installment_due")}</Text>
+                    <Text style={[styles.memberThisMonthValue, { color: Colors.light.primary }]}>Rs. {(myLoanForReminder.recommendedPayment || 0).toLocaleString("en-IN")}</Text>
+                  </View>
+                )}
+                {/* Next Meeting (Hidden for Admins since they see it in the stats grid) */}
+                {(!isPresident && !isTreasurer) && nextMeeting && (
+                  <View style={[styles.memberThisMonthRow, { borderTopWidth: 1, borderTopColor: Colors.light.border, paddingTop: 8, marginTop: 4 }]}>
+                    <Text style={styles.memberThisMonthLabel}>{t("dashboard.next_meeting")}</Text>
+                    <Text style={styles.memberThisMonthValue}>
+                      {new Date(nextMeeting.scheduledDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                     </Text>
                   </View>
-                  <View style={styles.reminderDetailRow}>
-                    <Text style={styles.reminderDetailLabel}>{t("history.principal_portion")}</Text>
-                    <Text style={styles.reminderDetailValue}>Rs. {(loanReminder.principalPortion || 0).toLocaleString("en-IN")}</Text>
-                  </View>
-                  <View style={styles.reminderDetailRow}>
-                    <Text style={styles.reminderDetailLabel}>{t("history.interest_portion")}</Text>
-                    <Text style={styles.reminderDetailValue}>Rs. {(loanReminder.interestPortion || 0).toLocaleString("en-IN")}</Text>
-                  </View>
-                  {loanReminder.outstandingInterest > 0 && (
-                    <View style={styles.reminderDetailRow}>
-                      <Text style={[styles.reminderDetailLabel, { color: Colors.light.danger }]}>{t("dashboard.outstanding_interest")}</Text>
-                      <Text style={[styles.reminderDetailValue, { color: Colors.light.danger }]}>Rs. {(loanReminder.outstandingInterest).toLocaleString("en-IN")}</Text>
-                    </View>
+                )}
+                {/* CTA buttons */}
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                  {(myUnpaid.length > 0 || (!myConfirmedThisMonth && !myPendingPayment)) && (
+                    <Pressable
+                      style={[styles.memberThisMonthBtn, { backgroundColor: Colors.light.primary }]}
+                      onPress={() => router.push("/(main)/payments")}
+                    >
+                      <Text style={styles.memberThisMonthBtnText}>{t("reminder.pay_now")}</Text>
+                    </Pressable>
+                  )}
+                  {myLoanForReminder && (
+                    <Pressable
+                      style={[styles.memberThisMonthBtn, { backgroundColor: Colors.light.secondary }]}
+                      onPress={() => router.push(`/loan/${myLoanForReminder.loan.id}` as any)}
+                    >
+                      <Text style={styles.memberThisMonthBtnText}>{t("history.loan_repayment")}</Text>
+                    </Pressable>
                   )}
                 </View>
-                <Pressable
-                  style={[styles.reminderPayBtn, { backgroundColor: Colors.light.primary }]}
-                  onPress={() => router.push(`/loan/${loanReminder.loan.id}`)}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
-                  <Text style={styles.reminderPayBtnText}>{t("history.loan_repayment")}</Text>
-                </Pressable>
               </View>
-            ) : (
-              <View style={[styles.reminderCard, { borderLeftColor: Colors.light.primary }]}>
-                <View style={styles.reminderHeader}>
-                  <View style={[styles.reminderIconWrap, { backgroundColor: Colors.light.primary + "20" }]}>
-                    <Ionicons name="layers-outline" size={20} color={Colors.light.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.reminderTitle}>
-                      {t("dashboard.multiple_active_loans")} ({loanReminder.count})
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.reminderDetails}>
-                  <View style={styles.reminderDetailRow}>
-                    <Text style={styles.reminderDetailLabel}>{t("recommended_monthly_payment")}</Text>
-                    <Text style={[styles.reminderDetailValue, { color: Colors.light.primary, fontWeight: 'bold' }]}>
-                      Rs. {(loanReminder.totalRecommended || 0).toLocaleString("en-IN")}
-                    </Text>
-                  </View>
-                </View>
-                <Pressable
-                  style={[styles.reminderPayBtn, { backgroundColor: Colors.light.primary }]}
-                  onPress={() => router.push("/loans")}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
-                  <Text style={styles.reminderPayBtnText}>{t("dashboard.multiple_active_loans")}</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        )}
+            </View>
+          );
+        })()}
 
+        {/* ── Current SHG Position (All Roles) ── */}
         {groupSummary && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{t("dashboard.financial_summary")}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="bar-chart" size={16} color={Colors.light.secondary} />
+                <Text style={styles.sectionTitle}>{t("dashboard.current_shg_position")}</Text>
+              </View>
             </View>
-            <View style={styles.summaryBox}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.total_savings")}</Text>
-                <Text style={styles.summaryValue}>Rs. {(groupSummary.totalSavings || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.current_cash_balance")}</Text>
-                <Text style={[styles.summaryValue, { color: Colors.light.success, fontWeight: "bold" }]}>Rs. {(groupSummary.currentBalance || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.total_principal_disbursed")}</Text>
-                <Text style={styles.summaryValue}>Rs. {(groupSummary.totalPrincipalDisbursed || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.principal_collected")}</Text>
-                <Text style={[styles.summaryValue, { color: Colors.light.success }]}>Rs. {(groupSummary.principalCollected || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.interest_collected")}</Text>
-                <Text style={[styles.summaryValue, { color: Colors.light.success }]}>Rs. {(groupSummary.interestCollected || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.outstanding_principal")}</Text>
-                <Text style={[styles.summaryValue, { color: Colors.light.danger }]}>Rs. {(groupSummary.outstandingPrincipal || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.outstanding_interest")}</Text>
-                <Text style={[styles.summaryValue, { color: Colors.light.danger }]}>Rs. {(groupSummary.outstandingInterest || 0).toLocaleString("en-IN")}</Text>
-              </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.active_loans")}</Text>
-                <Text style={styles.summaryValue}>{groupSummary.activeLoansCount || 0}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>{t("dashboard.completed_loans")}</Text>
-                <Text style={styles.summaryValue}>{groupSummary.completedLoansCount || 0}</Text>
+            <View style={styles.shgPositionCard}>
+              <View style={styles.shgPositionRow}>
+                <View style={styles.shgPositionItem}>
+                  <Text style={styles.shgPositionLabel}>{t("dashboard.total_savings")}</Text>
+                  <Text style={styles.shgPositionAmount}>
+                    Rs. {(groupSummary.totalSavings || 0).toLocaleString("en-IN")}
+                  </Text>
+                </View>
+                <View style={[styles.shgPositionItem, styles.shgPositionItemHighlight]}>
+                  <Text style={styles.shgPositionLabel}>{t("dashboard.current_shg_balance")}</Text>
+                  <Text style={[styles.shgPositionAmount, { color: Colors.light.success }]}>
+                    Rs. {(groupSummary.currentBalance || 0).toLocaleString("en-IN")}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
         )}
+
+        {/* ── Sections visible to President / Treasurer only ── */}
+        {(isPresident || isTreasurer) && (() => {
+          const now = new Date();
+          const thisMonthPayments = payments.filter(p =>
+            p.status === "confirmed" &&
+            new Date(p.date).getMonth() === now.getMonth() &&
+            new Date(p.date).getFullYear() === now.getFullYear()
+          );
+          const savingsThisMonth = thisMonthPayments.reduce((s, p) => s + p.amount, 0);
+          const lateFeesThisMonth = thisMonthPayments.reduce((s, p) => s + (p.lateFee || 0), 0);
+          const pendingMembersCount = payments.filter(p =>
+            p.status === "payment_not_received" &&
+            p.month &&
+            p.month.startsWith(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`)
+          ).length;
+          const nextMeeting = upcomingMeetings[0];
+          return (
+            <>
+              {/* ── 3. This Month ── */}
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="calendar-outline" size={16} color={Colors.light.primary} />
+                    <Text style={styles.sectionTitle}>{t("dashboard.this_month")}</Text>
+                  </View>
+                </View>
+                <View style={styles.thisMonthGrid}>
+                  {/* Meeting Status */}
+                  <View style={styles.thisMonthTile}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="calendar-outline" size={18} color={Colors.light.primary} />
+                      <Text style={styles.thisMonthTileLabel} numberOfLines={1}>{t("dashboard.meeting_status")}</Text>
+                    </View>
+                    {nextMeeting ? (
+                      <>
+                        <Text style={[styles.thisMonthTileValue, { color: Colors.light.primary }]} numberOfLines={1}>
+                          {t("scheduled")}
+                        </Text>
+                        <Text style={styles.thisMonthTileSubtext}>
+                          {new Date(nextMeeting.scheduledDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={[styles.thisMonthTileValue, { color: Colors.light.textMuted, fontSize: 11 }]}>
+                        {t("dashboard.no_meeting_scheduled")}
+                      </Text>
+                    )}
+                  </View>
+                  {/* Savings Collected */}
+                  <View style={styles.thisMonthTile}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="trending-up" size={18} color={Colors.light.success} />
+                      <Text style={styles.thisMonthTileLabel} numberOfLines={1}>{t("dashboard.savings_collected")}</Text>
+                    </View>
+                    <Text style={[styles.thisMonthTileValue, { color: Colors.light.success }]}>
+                      Rs. {savingsThisMonth.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
+                  {/* Pending Members */}
+                  <View style={styles.thisMonthTile}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="people-outline" size={18} color={Colors.light.pending} />
+                      <Text style={styles.thisMonthTileLabel} numberOfLines={1}>{t("dashboard.pending_members")}</Text>
+                    </View>
+                    <Text style={[styles.thisMonthTileValue, { color: pendingMembersCount > 0 ? Colors.light.pending : Colors.light.success }]}>
+                      {pendingMembersCount}
+                    </Text>
+                  </View>
+                  {/* Late Fees Collected */}
+                  <View style={styles.thisMonthTile}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="alert-circle-outline" size={18} color="#B45309" />
+                      <Text style={styles.thisMonthTileLabel} numberOfLines={1}>{t("dashboard.late_fees_collected")}</Text>
+                    </View>
+                    <Text style={[styles.thisMonthTileValue, { color: lateFeesThisMonth > 0 ? "#B45309" : Colors.light.textMuted }]}>
+                      Rs. {lateFeesThisMonth.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* ── 5. Internal Loan Summary (Green) ── */}
+              {groupSummary && (
+                <View style={styles.section}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons name="people-circle-outline" size={18} color="#16A34A" />
+                      <Text style={[styles.sectionTitle, { color: "#14532D" }]}>{t("dashboard.internal_loan_summary")}</Text>
+                    </View>
+                    <Pressable onPress={() => router.push("/loans")}>
+                      <Text style={[styles.viewAllText, { color: "#16A34A" }]}>{t("dashboard.view_loans")}</Text>
+                    </Pressable>
+                  </View>
+                  <View style={{ backgroundColor: "#F0FDF4", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "#86EFAC" }}>
+                    <Text style={{ fontSize: 12, color: "#16A34A", fontFamily: "Poppins_400Regular", marginBottom: 10 }}>
+                      {t("dashboard.internal_loan_summary")}
+                    </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                      <View style={{ flex: 1, minWidth: "44%", backgroundColor: "#fff", borderRadius: 10, padding: 10 }}>
+                        <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.active_loans")}</Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#14532D" }}>{groupSummary.activeLoansCount || 0}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: "44%", backgroundColor: "#fff", borderRadius: 10, padding: 10 }}>
+                        <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.loans_given_amount")}</Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#14532D" }}>Rs. {(groupSummary.totalPrincipalDisbursed || 0).toLocaleString("en-IN")}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: "44%", backgroundColor: "#fff", borderRadius: 10, padding: 10 }}>
+                        <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.outstanding_principal")}</Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#B91C1C" }}>Rs. {(groupSummary.outstandingPrincipal || 0).toLocaleString("en-IN")}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: "44%", backgroundColor: "#fff", borderRadius: 10, padding: 10 }}>
+                        <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.repayments_received")}</Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#15803D" }}>Rs. {(groupSummary.principalCollected || 0).toLocaleString("en-IN")}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: "44%", backgroundColor: "#fff", borderRadius: 10, padding: 10 }}>
+                        <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.interest_earned")}</Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#15803D" }}>Rs. {(groupSummary.interestCollected || 0).toLocaleString("en-IN")}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: "44%", backgroundColor: "#fff", borderRadius: 10, padding: 10 }}>
+                        <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.completed_loans")}</Text>
+                        <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#15803D" }}>{groupSummary.completedLoansCount || 0}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </>
+          );
+        })()}
+
+
 
 
         {/* ────── GROUP BANK LOAN SECTION ────── */}
@@ -937,10 +984,105 @@ export default function DashboardScreen() {
           </View>
         )}
 
+        {/* ── Member-only: My Internal Loan ── */}
+        {!isPresident && !isTreasurer && (() => {
+          const myLoan = loans.find(l => l.memberId === user?.id && l.status === "approved" && l.remainingBalance > 0);
+          const myRepayments = loanRepayments.filter(r => myLoan && r.loanId === myLoan.id);
+          const interestPaidByMe = myRepayments.reduce((s, r) => s + (r.shgAmount > 0 ? Math.max(0, r.shgAmount - (myLoan?.fixedPrincipalInstallment || 0)) : 0), 0);
+          const totalInterestPaid = myLoan ? (myLoan.totalInterestPaid || 0) : 0;
+          const principalInstallment = myLoan ? (myLoan.fixedPrincipalInstallment || Math.floor(myLoan.amount / myLoan.duration)) : 0;
+          const remainingInstallments = myLoan && principalInstallment > 0 ? Math.ceil(myLoan.remainingBalance / principalInstallment) : 0;
+          return (
+            <View style={styles.section}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <Ionicons name="people-circle-outline" size={18} color="#16A34A" />
+                <Text style={[styles.sectionTitle, { color: "#14532D" }]}>{t("dashboard.my_internal_loan")}</Text>
+              </View>
+              {myLoan ? (
+                <Pressable
+                  style={{ backgroundColor: "#F0FDF4", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "#86EFAC" }}
+                  onPress={() => router.push(`/loan/${myLoan.id}` as any)}
+                >
+                  <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
+                    <View style={{ flex: 1, minWidth: "44%" }}>
+                      <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.my_loan_amount")}</Text>
+                      <Text style={{ fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#14532D" }}>Rs. {(myLoan.amount || 0).toLocaleString("en-IN")}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: "44%" }}>
+                      <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.outstanding_principal")}</Text>
+                      <Text style={{ fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#B91C1C" }}>Rs. {(myLoan.remainingBalance || 0).toLocaleString("en-IN")}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: "44%" }}>
+                      <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.interest_paid")}</Text>
+                      <Text style={{ fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#15803D" }}>Rs. {totalInterestPaid.toLocaleString("en-IN")}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: "44%" }}>
+                      <Text style={{ fontSize: 11, color: "#666", fontFamily: "Poppins_400Regular" }}>{t("dashboard.remaining_installments")}</Text>
+                      <Text style={{ fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#14532D" }}>{remainingInstallments}</Text>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
+                    <Ionicons name="book-outline" size={13} color="#16A34A" />
+                    <Text style={{ fontSize: 12, color: "#16A34A", marginLeft: 4, fontFamily: "Poppins_500Medium" }}>{t("viewAll")}</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons name="chevron-forward" size={14} color="#16A34A" />
+                  </View>
+                </Pressable>
+              ) : (
+                <View style={{ backgroundColor: "#F0FDF4", borderRadius: 14, padding: 20, borderWidth: 1, borderColor: "#86EFAC", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="checkmark-circle-outline" size={32} color="#86EFAC" />
+                  <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 14, color: "#15803D", textAlign: "center" }}>
+                    {t("dashboard.no_active_loan")}
+                  </Text>
+                </View>
+              )}
+            </View>
+          );
+        })()}
+
+        {/* ── MEMBER: My Savings ── */}
+        {!isPresident && !isTreasurer && user && (() => {
+          const myConfirmed = payments.filter(p => p.memberId === user.id && p.status === "confirmed");
+          const myPending = payments.filter(p => p.memberId === user.id && (p.status === "pending" || p.status === "payment_not_received"));
+          const myTotalSavings = myConfirmed.reduce((s, p) => s + p.amount, 0);
+          const myLateFeesPaid = myConfirmed.reduce((s, p) => s + (p.lateFee || 0), 0);
+          return (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="wallet-outline" size={16} color={Colors.light.success} />
+                  <Text style={styles.sectionTitle}>{t("dashboard.my_savings_section")}</Text>
+                </View>
+                <Pressable onPress={() => router.push("/(main)/payments")}>
+                  <Text style={styles.viewAllText}>{t("viewAll")}</Text>
+                </Pressable>
+              </View>
+              <View style={styles.mySavingsGrid}>
+                <View style={styles.mySavingsTile}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="trending-up" size={18} color={Colors.light.success} />
+                    <Text style={styles.thisMonthTileLabel} numberOfLines={1}>{t("dashboard.total_savings")}</Text>
+                  </View>
+                  <Text style={[styles.thisMonthTileValue, { color: Colors.light.success }]}>Rs. {myTotalSavings.toLocaleString("en-IN")}</Text>
+                </View>
+                <View style={styles.mySavingsTile}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="alert-circle-outline" size={18} color="#B45309" />
+                    <Text style={styles.thisMonthTileLabel} numberOfLines={1}>{t("dashboard.late_fees_paid")}</Text>
+                  </View>
+                  <Text style={[styles.thisMonthTileValue, { color: myLateFeesPaid > 0 ? "#B45309" : Colors.light.textMuted }]}>Rs. {myLateFeesPaid.toLocaleString("en-IN")}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })()}
+
+
+
         {recentActivity.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{t("recentActivity")}</Text>
+              <Text style={styles.sectionTitle}>{t("dashboard.recent_activity")}</Text>
               <Pressable onPress={() => router.push("/history")}>
                 <Text style={styles.viewAllText}>{t("viewAll")}</Text>
               </Pressable>
@@ -987,8 +1129,8 @@ export default function DashboardScreen() {
             <Ionicons name="leaf" size={48} color={Colors.light.textMuted} />
             <Text style={styles.emptyTitle}>
               {isPresident
-                ? (t("language") === "Language" ? "Get started by creating a meeting" : "बैठक तयार करून सुरुवात करा")
-                : (t("language") === "Language" ? "Welcome to your group!" : "आपल्या गटात स्वागत!")}
+                ? t("dashboard.no_meeting_scheduled")
+                : t("dashboard.no_activity")}
             </Text>
           </View>
         )}
@@ -1093,28 +1235,151 @@ const styles = StyleSheet.create({
   statCard: {
     width: "47%",
     backgroundColor: Colors.light.card,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
     borderLeftWidth: 4,
-    gap: 4,
+    gap: 2,
   },
   statCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 4,
   },
   statValue: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 24,
+    fontSize: 22,
+    color: Colors.light.text,
+  },
+  statLabel: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    flexShrink: 1,
+  },
+  memberThisMonthCard: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    gap: 10,
+  },
+  memberThisMonthRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  memberThisMonthLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    flex: 1,
+  },
+  memberThisMonthValue: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+    color: Colors.light.text,
+  },
+  memberThisMonthBadge: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 13,
+  },
+  memberThisMonthBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memberThisMonthBtnText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+    color: "#fff",
+  },
+  mySavingsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  mySavingsTile: {
+    flex: 1,
+    minWidth: "44%",
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    padding: 14,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  section: { marginBottom: 24 },
+  thisMonthGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  thisMonthTile: {
+    flex: 1,
+    minWidth: "44%",
+    backgroundColor: Colors.light.card,
+    borderRadius: 14,
+    padding: 14,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  thisMonthTileLabel: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    flexShrink: 1,
+  },
+  thisMonthTileValue: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 16,
     color: Colors.light.text,
     marginTop: 4,
   },
-  statLabel: {
+  thisMonthTileSubtext: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 12,
+    color: Colors.light.textMuted,
+  },
+  shgPositionCard: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  shgPositionRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  shgPositionItem: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.light.background,
+    gap: 4,
+  },
+  shgPositionItemHighlight: {
+    backgroundColor: Colors.light.success + "10",
+    borderWidth: 1,
+    borderColor: Colors.light.success + "30",
+  },
+  shgPositionLabel: {
     fontFamily: "Poppins_400Regular",
     fontSize: 12,
     color: Colors.light.textSecondary,
   },
-  section: { marginBottom: 24 },
+  shgPositionAmount: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 18,
+    color: Colors.light.text,
+    marginTop: 2,
+  },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
