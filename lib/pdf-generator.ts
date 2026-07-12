@@ -1521,6 +1521,19 @@ export async function generateCashBook({ group, groupMembers, payments, loans, l
   reportEnd.setHours(23, 59, 59, 999);
   const reportStart = startDate ? new Date(startDate) : undefined;
   if (reportStart) reportStart.setHours(0, 0, 0, 0);
+  const monthKeyForDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const reportStartMonth = reportStart ? monthKeyForDate(reportStart) : undefined;
+  const reportEndMonth = monthKeyForDate(reportEnd);
+  // A contribution belongs to its selected month, even if it was entered later.
+  // Records created before the month field existed retain date-based fallback.
+  const contributionMonth = (payment: any) => /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || "")
+    ? payment.month
+    : monthKeyForDate(recordDate(payment));
+  const isPaymentInPeriod = (payment: any) => {
+    const month = contributionMonth(payment);
+    return (!reportStartMonth || month >= reportStartMonth) && month <= reportEndMonth;
+  };
+  const isPaymentOnOrBeforeEnd = (payment: any) => contributionMonth(payment) <= reportEndMonth;
   const isOnOrBeforeEnd = (item: any) => recordDate(item).getTime() <= reportEnd.getTime();
   const isInPeriod = (item: any) => {
     const date = recordDate(item).getTime();
@@ -1547,8 +1560,8 @@ export async function generateCashBook({ group, groupMembers, payments, loans, l
     const memberInternalLedger = internalLedgers.filter((entry: any) => memberLoanIds.has(entry.loanId));
     const memberBankLedger = bankLedgers.filter((entry: any) => memberAllocationIds.has(entry.allocationId));
 
-    const monthlySavings = memberPayments.filter(isInPeriod).reduce((sum: number, payment: any) => sum + amount(payment.amount), 0);
-    const lateFees = memberPayments.filter(isInPeriod).reduce((sum: number, payment: any) => sum + amount(payment.lateFee), 0);
+    const monthlySavings = memberPayments.filter(isPaymentInPeriod).reduce((sum: number, payment: any) => sum + amount(payment.amount), 0);
+    const lateFees = memberPayments.filter(isPaymentInPeriod).reduce((sum: number, payment: any) => sum + amount(payment.lateFee), 0);
     const internalPrincipalRecovery = memberInternalLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.principalPaid), 0);
     const internalInterestRecovery = memberInternalLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.interestPaid), 0);
     const bankPrincipalRecovery = memberBankLedger.filter((entry: any) => entry.type === "repayment" && isInPeriod(entry)).reduce((sum: number, entry: any) => sum + amount(entry.principalPaid), 0);
@@ -1585,7 +1598,7 @@ export async function generateCashBook({ group, groupMembers, payments, loans, l
       const latest = ledgerBeforeEnd(memberBankLedger, (entry) => entry.allocationId === allocation.id);
       return sum + (latest ? amount(latest.closingPrincipal) : amount(allocation.outstandingBalance));
     }, 0);
-    const closingSavings = memberPayments.filter(isOnOrBeforeEnd).reduce((sum: number, payment: any) => sum + amount(payment.amount), 0);
+    const closingSavings = memberPayments.filter(isPaymentOnOrBeforeEnd).reduce((sum: number, payment: any) => sum + amount(payment.amount), 0);
 
     return { index: index + 1, member, monthlySavings, additionalSavings, fixedDeposit, internalPrincipalRecovery, internalInterestRecovery, bankPrincipalRecovery, bankInterestRecovery, lateFees, otherContribution, totalDeposits, internalLoanGiven, bankLoanGiven, savingsAndProfitReturned, fixedDepositAndInterestReturned, additionalSavingsAndInterestReturned, totalPayments, internalExpectedLoan: internalClosing, bankExpectedLoan: bankClosing, closingSavings, internalPrincipalOutstanding, bankPrincipalOutstanding };
   });
