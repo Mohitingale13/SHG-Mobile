@@ -9,6 +9,8 @@ export const translations: Record<string, any> = {
   "reports.group_reports": { "en": "SHG Reports", "mr": "गट अहवाल" },
   "reports.time_range": { "en": "Time Range", "mr": "वेळ मर्यादा" },
   "reports.cash_book_desc": { "en": "Running physical cash balance tracking all SHG cash movements.", "mr": "गटाच्या सर्व रोख व्यवहारांचा मागोवा ठेवणारी भौतिक रोख शिल्लक." },
+  "reports.member_financial_register": { "en": "Member Financial Register", "mr": "सभासद आर्थिक नोंदवही" },
+  "reports.member_financial_register_desc": { "en": "Official member-wise savings, loan recovery, disbursement, and closing-balance register.", "mr": "सभासदनिहाय बचत, कर्ज परतफेड, कर्ज वितरण आणि अखेरची शिल्लक यांची अधिकृत नोंदवही." },
   "reports.bank_book_desc": { "en": "Running bank balance tracking all online/cheque movements.", "mr": "सर्व ऑनलाइन/चेक व्यवहारांचा मागोवा ठेवणारी बँक शिल्लक." },
   "reports.financial_desc": { "en": "Overall financial position (Income, Expenses, Assets, Liabilities).", "mr": "एकूण आर्थिक स्थिती (उत्पन्न, खर्च, मालमत्ता, दायित्वे)." },
   "reports.savings_desc": { "en": "Detailed list of member savings contributions and late fees.", "mr": "सदस्यांच्या बचत योगदानाची आणि विलंब शुल्काची सविस्तर यादी." },
