@@ -552,39 +552,51 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {isPresident && groupSettings?.openingBalances && (
+        {(isPresident || isTreasurer) && groupSettings?.openingBalances && (
           !groupSettings?.setupProgress?.internalLoans || !groupSettings?.setupProgress?.bankLoans
         ) && (
           <View style={{ backgroundColor: "#F0F9FF", borderWidth: 1, borderColor: "#BAE6FD", borderRadius: 12, padding: 16, marginBottom: 20 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <Ionicons name="information-circle" size={20} color="#0369A1" />
               <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 16, color: "#0369A1" }}>
-                Complete Existing SHG Setup
+                {t("dashboard.complete_setup_title") || "Complete Existing SHG Setup"}
               </Text>
             </View>
             <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#075985", marginBottom: 12, lineHeight: 20 }}>
-              You can continue using the application now. Complete the remaining setup whenever you are ready.
+              {t("dashboard.complete_setup_desc") || "You can continue using the application now. Complete the remaining setup whenever you are ready."}
             </Text>
             <View style={{ marginBottom: 16, gap: 4 }}>
               {!groupSettings?.setupProgress?.internalLoans && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <Ionicons name="ellipse" size={5} color="#0369A1" />
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#0369A1" }}>Active Internal Loans</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#0369A1" }}>{t("dashboard.active_internal_loans") || "Active Internal Loans"}</Text>
                 </View>
               )}
               {!groupSettings?.setupProgress?.bankLoans && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <Ionicons name="ellipse" size={5} color="#0369A1" />
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#0369A1" }}>Active Group Bank Loans</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#0369A1" }}>{t("dashboard.active_bank_loans") || "Active Group Bank Loans"}</Text>
                 </View>
               )}
             </View>
-            <Pressable 
-              style={{ backgroundColor: "#0284C7", alignSelf: "flex-start", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 }}
-              onPress={() => Alert.alert("Setup", "Navigation to loan setup screens will be implemented here.")}
-            >
-              <Text style={{ color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 13 }}>Continue Setup</Text>
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+              {!groupSettings?.setupProgress?.internalLoans && (
+                <Pressable 
+                  style={{ backgroundColor: "#0284C7", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 }}
+                  onPress={() => router.push("/create-loan" as any)}
+                >
+                  <Text style={{ color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 13 }}>{t("add") || "Add"} {t("dashboard.active_internal_loans") || "Internal Loans"}</Text>
+                </Pressable>
+              )}
+              {!groupSettings?.setupProgress?.bankLoans && (
+                <Pressable 
+                  style={{ backgroundColor: "#0284C7", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 }}
+                  onPress={() => router.push("/create-bank-loan" as any)}
+                >
+                  <Text style={{ color: "#fff", fontFamily: "Poppins_600SemiBold", fontSize: 13 }}>{t("add") || "Add"} {t("dashboard.active_bank_loans") || "Bank Loans"}</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         )}
 
@@ -599,7 +611,7 @@ export default function DashboardScreen() {
         )}
 
         {/* ── PERSONAL ACTION REQUIRED (Disposable Card) ── */}
-        {user && (() => {
+        {user && groupSettings?.setupProgress?.settings && (() => {
           const now = new Date();
           const myConfirmedThisMonth = payments.find(
             p => p.memberId === user.id && p.status === "confirmed" &&

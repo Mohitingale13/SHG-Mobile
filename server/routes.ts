@@ -360,10 +360,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const activeMembers = members.filter(m => m.status === "active").length;
         const groupSettings = await storage.getGroupSettings(groupId);
-        const openingBalances = groupSettings?.settings?.openingBalances || {};
-        const openingSavings = openingBalances.totalSavings || 0;
-        const openingCash = openingBalances.cashInHand || 0;
-        const openingBank = openingBalances.bankBalance || 0;
+        const openingBalances = groupSettings?.openingBalances || {};
+        const openingSavings = Number(openingBalances.totalSavings) || 0;
+        const openingBalance = Number(openingBalances.currentBalance) || 0;
 
         const totalSavings = openingSavings + payments.filter(p => p.status === "confirmed" && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
         const totalPenalties = payments.filter(p => p.status === "confirmed" && p.lateFee > 0).reduce((sum, p) => sum + p.lateFee, 0);
@@ -372,23 +371,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const completedLoansCount = loans.filter(l => l.status === "completed" || (l.status === "approved" && l.remainingBalance <= 0)).length;
 
         const approvedLoans = loans.filter(l => ["approved", "completed"].includes(l.status));
-        // Only count disbursements that occurred *after* opening balances.
-        // Wait, loans entered from existing setup will just have their normal amount.
         const totalPrincipalDisbursed = approvedLoans.reduce((sum, l) => sum + l.amount, 0);
         
-        // Exact alignment with SHG rules using ONLY snapshot fields from the Loan object
+        // Only count disbursements that occurred *in the app* (not migrated) for cash flow
+        const appDisbursedLoans = approvedLoans.filter(l => l.resolutionNo !== "MIGRATED");
+        const totalPrincipalDisbursedInApp = appDisbursedLoans.reduce((sum, l) => sum + l.amount, 0);
+        
+        // Exact alignment with SHG rules using ONLY snapshot fields from the Loan object for lifetime stats
         const principalCollected = approvedLoans.reduce((sum, l) => sum + (l.totalPrincipalPaid || 0), 0);
         const interestCollected = approvedLoans.reduce((sum, l) => sum + (l.totalInterestPaid || 0), 0);
         const outstandingPrincipal = approvedLoans.reduce((sum, l) => sum + (l.remainingBalance || 0), 0);
         const outstandingInterest = approvedLoans.reduce((sum, l) => sum + (l.outstandingInterest || 0), 0);
         
-        // For cash balance, we add opening balances to operations
-        const legacyTotalRepayments = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
-        const totalRepaymentsForCash = Math.max(legacyTotalRepayments, principalCollected + interestCollected);
+        // For cash balance, we add opening balances to operations IN THE APP
+        const totalRepaymentsForCash = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
         
         // Operational Balance generated since start
         const operationalSavings = totalSavings - openingSavings;
-        const currentBalance = openingCash + openingBank + operationalSavings + totalPenalties + totalRepaymentsForCash - totalPrincipalDisbursed;
+        const currentBalance = openingBalance + operationalSavings + totalPenalties + totalRepaymentsForCash - totalPrincipalDisbursedInApp;
 
         return res.json({
           totalSavings,
@@ -418,14 +418,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const { groupId } = req.params;
         const openingBalances = req.body;
-        const groupSettings = await storage.getGroupSettings(groupId);
-        const settings = groupSettings ? groupSettings.settings : {};
+        const settings = await storage.getGroupSettings(groupId);
         
         settings.openingBalances = openingBalances;
         settings.setupProgress = {
           ...(settings.setupProgress || {}),
           openingBalances: true
         };
+        // ── Migration window: 30 days from the opening date the president picked
+        const openingDateStr = openingBalances.openingDate || new Date().toISOString().split("T")[0];
+        const expiry = new Date(openingDateStr);
+        expiry.setDate(expiry.getDate() + 30);
+        settings.migrationWindowExpiry = expiry.toISOString();
         
         await storage.updateGroupSettings(groupId, settings);
         
@@ -446,8 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const { groupId } = req.params;
         const updates = req.body;
-        const groupSettings = await storage.getGroupSettings(groupId);
-        const settings = groupSettings ? groupSettings.settings : {};
+        const settings = await storage.getGroupSettings(groupId);
         
         settings.setupProgress = {
           ...(settings.setupProgress || {}),
@@ -1002,11 +1005,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const { amount, duration, memberId, isExisting, outstandingPrincipal, loanDate } = req.body;
+      const { amount, duration, memberId, isExisting, isCompleted, outstandingPrincipal, loanDate } = req.body;
       if (!amount || !duration)
         return res.status(400).json({ error: "Amount and duration required" });
 
       const settings = await storage.getGroupSettings(groupId);
+
+      // Gate migration-mode entries to within the 30-day window
+      if (isExisting) {
+        const expiry = settings?.migrationWindowExpiry;
+        if (!expiry || new Date() > new Date(expiry)) {
+          return res.status(403).json({ error: "migrationWindowExpired" });
+        }
+      }
 
       // Validate SHG amount
       if (amount <= 0) return res.status(400).json({ error: "invalidAmount" });
@@ -1049,9 +1060,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const method = "reducing_balance"; 
       
       let remainingBal = method === "reducing_balance" ? principal : totalRepayable;
+      let totalPrincipalAlreadyPaid = 0;
       if (isExisting) {
         initialStatus = "approved";
-        remainingBal = Number(outstandingPrincipal) || principal;
+        if (isCompleted) {
+          // Historical fully-repaid loan — records only, no ledger impact
+          initialStatus = "completed";
+          remainingBal = 0;
+          totalPrincipalAlreadyPaid = principal;
+        } else {
+          remainingBal = Number(outstandingPrincipal) || principal;
+          totalPrincipalAlreadyPaid = principal - remainingBal;
+        }
       }
 
       const loan = await storage.createLoan({
@@ -1074,7 +1094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         bankLoanRemarks: undefined,
         calculationMethod: method,
         remainingBalance: remainingBal,
-        totalPrincipalPaid: isExisting ? principal - remainingBal : 0,
+        totalPrincipalPaid: totalPrincipalAlreadyPaid,
         totalInterestPaid: 0,
         outstandingInterest: 0,
       } as any);
@@ -1699,15 +1719,24 @@ Reply with ONLY a JSON object, no markdown, no explanation:
   app.post(
     "/api/groups/:groupId/bank-loans",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const { bankName, branch, accountNumber, ifscCode, sanctionDate, repaymentStartDate, amount, annualInterestRate, durationMonths, remarks } = req.body;
+      const { bankName, branch, accountNumber, ifscCode, sanctionDate, repaymentStartDate, amount, annualInterestRate, durationMonths, remarks, isExisting, isCompleted } = req.body;
       if (!bankName || !amount || !annualInterestRate || !durationMonths || !sanctionDate) {
         return res.status(400).json({ error: "Missing required fields" });
       }
+      // Gate migration-mode entries to within the 30-day window
+      if (isExisting) {
+        const gs = await storage.getGroupSettings(groupId);
+        const expiry = gs?.migrationWindowExpiry;
+        if (!expiry || new Date() > new Date(expiry)) {
+          return res.status(403).json({ error: "migrationWindowExpired" });
+        }
+      }
+      const loanStatus = isExisting && isCompleted ? "completed" : "active";
       const loan = await storage.createGroupBankLoan({
         groupId,
         bankName,
@@ -1720,7 +1749,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
         annualInterestRate: Number(annualInterestRate),
         durationMonths: Number(durationMonths),
         remarks: remarks || null,
-        status: "active",
+        status: loanStatus,
         createdBy: req.currentUser!.id,
       });
       return res.status(201).json(loan);
@@ -1731,7 +1760,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
   app.patch(
     "/api/bank-loans/:id",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { id } = req.params;
       const bankLoan = await storage.getGroupBankLoanById(id);
@@ -1749,7 +1778,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
   app.delete(
     "/api/bank-loans/:id",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { id } = req.params;
       const bankLoan = await storage.getGroupBankLoanById(id);

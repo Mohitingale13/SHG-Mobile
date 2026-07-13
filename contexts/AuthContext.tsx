@@ -104,11 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback((u: User, g: Group) => {
     setUser(u);
     setGroup(g);
-    // Resolve language priority: user > group > keep current UI language
+    // Resolve language priority: user > keep current UI language
+    // We do NOT fallback to g.preferredLanguage because it defaults to "mr" 
+    // and will overwrite the user's explicit toggle selection during onboarding.
     if (u.preferredLanguage) {
       setLanguageRef.current(u.preferredLanguage as Language);
-    } else if (g.preferredLanguage) {
-      setLanguageRef.current(g.preferredLanguage as Language);
     }
   }, []);
 

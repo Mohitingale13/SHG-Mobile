@@ -66,7 +66,7 @@ export default function WelcomeScreen() {
               ]}
               onPress={() => router.push("/(auth)/register")}
             >
-              <Text style={styles.secondaryBtnText}>{t("register_new_group") || "Register New Group"}</Text>
+              <Text style={styles.secondaryBtnText}>{t("register") || "Register"}</Text>
             </Pressable>
           </View>
         </View>

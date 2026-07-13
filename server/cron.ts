@@ -35,10 +35,8 @@ async function generateMonthlyPayments() {
   const now = new Date();
   
   for (const group of groups) {
-    const hasConfigured = await storage.hasGroupSettings(group.groupId);
-    if (!hasConfigured) continue;
-    
     const settings = await storage.getGroupSettings(group.groupId);
+    if (!settings || !settings.setupProgress?.settings) continue;
     const members = await storage.getUsersByGroupId(group.groupId);
     const activeMembers = members.filter(m => m.status === "active");
     
@@ -102,6 +100,7 @@ async function calculateLateFees() {
   
   for (const group of groups) {
     const settings = await storage.getGroupSettings(group.groupId);
+    if (!settings || !settings.setupProgress?.settings) continue;
     const payments = await storage.getPaymentsByGroupId(group.groupId);
     const pendingPayments = payments.filter(p => 
       (p.status === "payment_not_received" || p.status === "pending" || p.status === "pending_verification") && p.dueDate

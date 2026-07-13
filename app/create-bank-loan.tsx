@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
-import { View, Text, StyleSheet, TextInput, ScrollView, Pressable, Platform, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TextInput, ScrollView, Pressable, Platform, Alert, ActivityIndicator, Switch } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -13,7 +13,7 @@ import Colors from "@/constants/colors";
 
 export default function CreateBankLoanScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isPresident } = useAuth();
+  const { user, isPresident, isTreasurer } = useAuth();
   const { t } = useLanguage();
   const { createGroupBankLoan } = useData();
 
@@ -29,8 +29,13 @@ export default function CreateBankLoanScreen() {
   const [remarks, setRemarks] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // President-only guard
-  if (!isPresident) {
+  // ── Migration window
+  const { isMigrationWindow } = useData();
+  const [isMigration, setIsMigration] = useState(false);
+  const [migrationCompleted, setMigrationCompleted] = useState(false);
+
+  // Admin-only guard
+  if (!isPresident && !isTreasurer) {
     return (
       <View style={[styles.container, { justifyContent: "center", alignItems: "center", padding: 20 }]}>
         <Ionicons name="lock-closed-outline" size={48} color={Colors.light.danger} />
@@ -70,6 +75,8 @@ export default function CreateBankLoanScreen() {
         annualInterestRate: Number(annualInterestRate),
         durationMonths: Number(durationMonths),
         remarks: remarks.trim() || undefined,
+        isExisting: isMigration || undefined,
+        isCompleted: (isMigration && migrationCompleted) || undefined,
       });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Navigate to the new loan detail for allocation
@@ -157,6 +164,49 @@ export default function CreateBankLoanScreen() {
           <Text style={styles.label}>{t("bank_loan.remarks")}</Text>
           <TextInput style={[styles.input, { height: 80, textAlignVertical: "top" }]} multiline placeholder={t("bank_loan.remarks_optional")} value={remarks} onChangeText={setRemarks} />
         </View>
+
+        {/* Migration Entry Section */}
+        {isMigrationWindow && (
+          <View style={{ borderWidth: 1, borderColor: "#F59E0B80", borderRadius: 14, padding: 14, backgroundColor: "#FEF3C710" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="time-outline" size={18} color="#F59E0B" />
+                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 14, color: Colors.light.text }}>
+                  {t("migration.entry_mode") || "Historical Entry (Migration)"}
+                </Text>
+              </View>
+              <Switch
+                value={isMigration}
+                onValueChange={(v) => { setIsMigration(v); setMigrationCompleted(false); }}
+                trackColor={{ false: Colors.light.border, true: "#F59E0B80" }}
+                thumbColor={isMigration ? "#F59E0B" : Colors.light.textMuted}
+              />
+            </View>
+            <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.light.textSecondary, marginBottom: isMigration ? 12 : 0 }}>
+              {t("migration.bank_entry_desc") || "Use this to log a bank loan that existed before the app was set up."}
+            </Text>
+            {isMigration && (
+              <View style={{ flexDirection: "row", backgroundColor: Colors.light.border + "60", borderRadius: 10, padding: 3 }}>
+                <Pressable
+                  style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: !migrationCompleted ? "#F59E0B" : "transparent", alignItems: "center" }}
+                  onPress={() => setMigrationCompleted(false)}
+                >
+                  <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: !migrationCompleted ? "#fff" : Colors.light.textSecondary }}>
+                    {t("migration.active_loan") || "Still Active"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: migrationCompleted ? Colors.light.success : "transparent", alignItems: "center" }}
+                  onPress={() => setMigrationCompleted(true)}
+                >
+                  <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: migrationCompleted ? "#fff" : Colors.light.textSecondary }}>
+                    {t("migration.completed_loan") || "Fully Repaid"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>

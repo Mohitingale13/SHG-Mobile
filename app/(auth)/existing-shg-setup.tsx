@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Platform, Alert, KeyboardAvoidingView } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Platform, Alert, KeyboardAvoidingView, ActivityIndicator } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,23 +11,21 @@ import SHGDatePicker from "@/components/SHGDatePicker";
 
 export default function ExistingSHGSetupScreen() {
   const insets = useSafeAreaInsets();
-  const { t } = useLanguage();
+  const { t, language, setLanguage } = useLanguage();
   const { group, user } = useAuth();
   
   const [openingDate, setOpeningDate] = useState(new Date().toISOString().split('T')[0]);
   const [totalSavings, setTotalSavings] = useState("");
-  const [cashInHand, setCashInHand] = useState("");
-  const [bankBalance, setBankBalance] = useState("");
+  const [currentBalance, setCurrentBalance] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
     if (!group?.groupId) return;
     
     const savingsNum = parseInt(totalSavings || "0");
-    const cashNum = parseInt(cashInHand || "0");
-    const bankNum = parseInt(bankBalance || "0");
+    const balanceNum = parseInt(currentBalance || "0");
 
-    if (isNaN(savingsNum) || isNaN(cashNum) || isNaN(bankNum)) {
+    if (isNaN(savingsNum) || isNaN(balanceNum)) {
       Alert.alert(t("error") || "Error", t("invalid_amount") || "Please enter valid numeric amounts.");
       return;
     }
@@ -37,8 +35,7 @@ export default function ExistingSHGSetupScreen() {
       await apiPost(`/api/groups/${group.groupId}/opening-balances`, {
         openingDate,
         totalSavings: savingsNum,
-        cashInHand: cashNum,
-        bankBalance: bankNum
+        currentBalance: balanceNum,
       });
       
       router.replace("/(main)" as any);
@@ -56,64 +53,69 @@ export default function ExistingSHGSetupScreen() {
         contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 16, paddingBottom: insets.bottom + 20 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>{t("setup.opening_balances") || "Opening Balances"}</Text>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={{ marginRight: 8, marginTop: 4 }}>
+            <Ionicons name="chevron-back" size={28} color={Colors.light.text} />
+          </Pressable>
+          <Text style={[styles.title, { flex: 1, marginBottom: 0 }]}>{t("setup.opening_balances") || "Current Group Status"}</Text>
+          <Pressable
+            style={styles.langToggle}
+            onPress={() => setLanguage(language === "en" ? "mr" : "en")}
+          >
+            <Ionicons name="language" size={18} color={Colors.light.primary} />
+            <Text style={styles.langText}>{language === "en" ? "मराठी" : "English"}</Text>
+          </Pressable>
+        </View>
         <Text style={styles.subtitle}>
-          {t("setup.opening_balances_desc") || "Enter the financial position of your SHG as of the day you are starting to use this application.\n\nYou do not need to enter previous monthly records now. Those can be added later if required."}
+          {t("setup.opening_balances_desc") || "Please enter the total savings and cash your group currently has before you start using this app."}
         </Text>
 
         <View style={styles.form}>
-          <Text style={styles.inputLabel}>{t("setup.opening_date") || "Opening Date"}</Text>
+          <View>
+            <Text style={styles.inputLabel}>{t("setup.opening_date") || "App Starting Date"}</Text>
           <SHGDatePicker
             value={openingDate}
             onSelect={setOpeningDate}
             style={styles.datePicker}
           />
-
-          <Text style={styles.inputLabel}>{t("setup.total_savings") || "Total Accumulated Savings (Rs)"}</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="wallet-outline" size={20} color={Colors.light.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="0"
-              placeholderTextColor={Colors.light.textMuted}
-              value={totalSavings}
-              onChangeText={(text) => setTotalSavings(text.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-            />
           </View>
 
-          <Text style={styles.inputLabel}>{t("setup.cash_in_hand") || "Current Cash In Hand (Rs)"}</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="cash-outline" size={20} color={Colors.light.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="0"
-              placeholderTextColor={Colors.light.textMuted}
-              value={cashInHand}
-              onChangeText={(text) => setCashInHand(text.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-            />
+          <View>
+            <Text style={styles.inputLabel}>{t("setup.total_savings") || "Total Accumulated Savings (Rs)"}</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="wallet-outline" size={20} color={Colors.light.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor={Colors.light.textMuted}
+                value={totalSavings}
+                onChangeText={(text) => setTotalSavings(text.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+              />
+            </View>
           </View>
 
-          <Text style={styles.inputLabel}>{t("setup.bank_balance") || "Current Bank Account Balance (Rs)"}</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="business-outline" size={20} color={Colors.light.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="0"
-              placeholderTextColor={Colors.light.textMuted}
-              value={bankBalance}
-              onChangeText={(text) => setBankBalance(text.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-            />
+          <View>
+            <Text style={styles.inputLabel}>{t("setup.current_balance") || "Current SHG Balance (Rs)"}</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="cash-outline" size={20} color={Colors.light.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor={Colors.light.textMuted}
+                value={currentBalance}
+                onChangeText={(text) => setCurrentBalance(text.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+              />
+            </View>
           </View>
 
           <View style={styles.infoBox}>
-            <Ionicons name="information-circle-outline" size={20} color={Colors.light.primary} />
-            <Text style={styles.infoBoxText}>
-              {t("setup.opening_balances_note") || "Do not worry about member distributions right now. You can manage member lists and assign active loans from the Dashboard after completing this setup."}
-            </Text>
-          </View>
+          <Ionicons name="information-circle" size={24} color={Colors.light.primary} />
+          <Text style={styles.infoBoxText}>
+            {t("setup.opening_balances_note") || "Note: You can add details about who took how much loan from the dashboard later."}
+          </Text>
+        </View>
         </View>
       </ScrollView>
 
@@ -123,6 +125,7 @@ export default function ExistingSHGSetupScreen() {
           onPress={handleSave}
           disabled={loading}
         >
+          {loading && <ActivityIndicator color="#fff" size="small" />}
           <Text style={styles.btnText}>{loading ? t("saving") || "Saving..." : t("continue") || "Continue to Dashboard"}</Text>
           {!loading && <Ionicons name="arrow-forward" size={20} color="#fff" />}
         </Pressable>
@@ -138,6 +141,29 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 24,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+    gap: 12,
+  },
+  langToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: Colors.light.card,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  langText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+    color: Colors.light.text,
   },
   title: {
     fontSize: 28,
@@ -159,7 +185,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Poppins_500Medium",
     color: Colors.light.text,
-    marginBottom: -8,
+    marginBottom: 8,
   },
   inputContainer: {
     flexDirection: "row",

@@ -18,7 +18,16 @@ export default function CreateLoanScreen() {
   const insets = useSafeAreaInsets();
   const { t, language } = useLanguage();
   const { verifyPassword } = useAuth();
-  const { requestLoan, groupSettings } = useData();
+  const { requestLoan, groupSettings, groupMembers, isMigrationWindow } = useData();
+  const { user, isPresident, isTreasurer } = useAuth();
+
+  // ── Migration mode state (only available when isMigrationWindow)
+  const [isMigration, setIsMigration] = useState(false);
+  const [migrationCompleted, setMigrationCompleted] = useState(false); // false=Active, true=Completed
+  const [migrationOutstanding, setMigrationOutstanding] = useState("");
+  const [migrationLoanDate, setMigrationLoanDate] = useState(new Date().toISOString().split("T")[0]);
+  const [migrationMemberId, setMigrationMemberId] = useState<string | null>(null);
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
 
   const [amount, setAmount] = useState("");
   const [duration, setDuration] = useState("");
@@ -33,18 +42,6 @@ export default function CreateLoanScreen() {
 
   const numAmount = parseInt(amount) || 0;
   const numDuration = parseInt(duration) || 0;
-
-  const applicableRule = useMemo(() => {
-    if (numAmount <= 0) return null;
-    return getDurationRuleForAmount(numAmount, groupSettings.durationRules);
-  }, [numAmount, groupSettings.durationRules]);
-
-  const durationHint = useMemo(() => {
-    if (!applicableRule) return "";
-    return language === "en"
-      ? `${applicableRule.minDuration}–${applicableRule.maxDuration} months`
-      : `${applicableRule.minDuration}–${applicableRule.maxDuration} महिने`;
-  }, [applicableRule, language]);
 
   const validateFields = (): boolean => {
     let valid = true;
@@ -62,17 +59,7 @@ export default function CreateLoanScreen() {
     if (!numDuration || numDuration <= 0) {
       setDurationError(t("auto.please_enter_a_valid_duration"));
       valid = false;
-    } else if (applicableRule) {
-      if (numDuration < applicableRule.minDuration) {
-        setDurationError(t("durationTooShort") + ` (Min: ${applicableRule.minDuration})`);
-        valid = false;
-      } else if (numDuration > applicableRule.maxDuration) {
-        setDurationError(t("durationTooLong") + ` (Max: ${applicableRule.maxDuration})`);
-        valid = false;
-      }
     }
-
-
 
     return valid;
   };
@@ -100,6 +87,16 @@ export default function CreateLoanScreen() {
     setLoading(true);
 
     const payload: any = { amount: numAmount, duration: numDuration };
+    if (isMigration) {
+      payload.isExisting = true;
+      payload.loanDate = migrationLoanDate;
+      if (migrationCompleted) {
+        payload.isCompleted = true;
+      } else {
+        payload.outstandingPrincipal = parseInt(migrationOutstanding) || numAmount;
+      }
+      if (migrationMemberId && (isPresident || isTreasurer)) payload.memberId = migrationMemberId;
+    }
 
     const error = await requestLoan(payload);
     setLoading(false);
@@ -185,33 +182,6 @@ export default function CreateLoanScreen() {
           </View>
           {!!durationError && <Text style={styles.errorText}>{durationError}</Text>}
 
-          {durationHint !== "" && !durationError && (
-            <View style={styles.hintRow}>
-              <Ionicons name="information-circle-outline" size={14} color={Colors.light.primary} />
-              <Text style={styles.hintText}>
-                {t("durationHint")}: {durationHint}
-              </Text>
-            </View>
-          )}
-
-          {groupSettings.durationRules.length > 0 && (
-            <View style={styles.rulesCard}>
-              <Text style={styles.rulesTitle}>{t("loanPolicy")}</Text>
-              {[...groupSettings.durationRules]
-                .sort((a, b) => a.maxAmount - b.maxAmount)
-                .map((rule, i) => (
-                  <View key={i} style={styles.ruleRow}>
-                    <Ionicons name="ellipse" size={7} color={Colors.light.textMuted} style={{ marginTop: 5 }} />
-                    <Text style={styles.ruleText}>
-                      {language === "en"
-                        ? `Up to Rs. ${rule.maxAmount.toLocaleString("en-IN")} → ${rule.minDuration}–${rule.maxDuration} months`
-                        : `रु. ${rule.maxAmount.toLocaleString("en-IN")} पर्यंत → ${rule.minDuration}–${rule.maxDuration} महिने`}
-                    </Text>
-                  </View>
-                ))}
-            </View>
-          )}
-
           {Number(amount) > 0 && Number(duration) > 0 && (
             <View style={{ marginTop: 16, marginBottom: 16, padding: 16, backgroundColor: Colors.light.card, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.border, elevation: 1, ...Platform.select({ web: { boxShadow: "0px 1px 2px rgba(0,0,0,0.05)" }, default: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 } }) }}>
 
@@ -248,6 +218,102 @@ export default function CreateLoanScreen() {
                   Rs. {(Number(amount) + Math.round(Number(amount) * (groupSettings?.interestRate || 2) / 100 * Number(duration))).toLocaleString('en-IN')}
                 </Text>
               </View>
+            </View>
+          )}
+
+          {/* ── Migration Entry (only within 30-day window, only for President/Treasurer) ── */}
+          {isMigrationWindow && (isPresident || isTreasurer) && (
+            <View style={{ marginTop: 16, borderWidth: 1, borderColor: Colors.light.primary + "80", borderRadius: 14, padding: 14, backgroundColor: Colors.light.primary + "10" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="time-outline" size={18} color={Colors.light.primary} />
+                  <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 14, color: Colors.light.text }}>
+                    {t("migration.entry_mode") || "Historical Entry (Migration)"}
+                  </Text>
+                </View>
+                <Switch
+                  value={isMigration}
+                  onValueChange={(v) => { setIsMigration(v); setMigrationCompleted(false); }}
+                  trackColor={{ false: Colors.light.border, true: Colors.light.primary + "80" }}
+                  thumbColor={isMigration ? Colors.light.primary : Colors.light.textMuted}
+                />
+              </View>
+              <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.light.textSecondary, marginBottom: isMigration ? 12 : 0 }}>
+                {t("migration.entry_desc") || "Use this to log a loan that existed before the app was set up."}
+              </Text>
+
+              {isMigration && (
+                <>
+                  {/* Active vs Completed toggle */}
+                  <View style={{ flexDirection: "row", backgroundColor: Colors.light.border + "60", borderRadius: 10, padding: 3, marginBottom: 12 }}>
+                    <Pressable
+                      style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: !migrationCompleted ? Colors.light.primary : "transparent", alignItems: "center" }}
+                      onPress={() => setMigrationCompleted(false)}
+                    >
+                      <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: !migrationCompleted ? "#fff" : Colors.light.textSecondary }}>
+                        {t("migration.active_loan") || "Still Active"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: migrationCompleted ? Colors.light.success : "transparent", alignItems: "center" }}
+                      onPress={() => setMigrationCompleted(true)}
+                    >
+                      <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: migrationCompleted ? "#fff" : Colors.light.textSecondary }}>
+                        {t("migration.completed_loan") || "Fully Repaid"}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {/* Disbursal Date */}
+                  <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 13, color: Colors.light.text, marginBottom: 6 }}>
+                    {t("migration.loan_date") || "Disbursal Date"}
+                  </Text>
+                  <View style={{ backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="calendar-outline" size={16} color={Colors.light.textSecondary} />
+                    <TextInput
+                      style={{ flex: 1, fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.text }}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={Colors.light.textMuted}
+                      value={migrationLoanDate}
+                      onChangeText={setMigrationLoanDate}
+                    />
+                  </View>
+
+                  {/* Outstanding Principal (only for active) */}
+                  {!migrationCompleted && (
+                    <>
+                      <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 13, color: Colors.light.text, marginBottom: 6 }}>
+                        {t("migration.outstanding_principal") || "Outstanding Principal (Rs.)"}
+                      </Text>
+                      <View style={{ backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.textSecondary }}>Rs.</Text>
+                        <TextInput
+                          style={{ flex: 1, fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.light.text }}
+                          placeholder="How much is still owed?"
+                          placeholderTextColor={Colors.light.textMuted}
+                          value={migrationOutstanding}
+                          onChangeText={setMigrationOutstanding}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                    </>
+                  )}
+
+                  {/* Member selector (President can pick any member) */}
+                  <Text style={{ fontFamily: "Poppins_500Medium", fontSize: 13, color: Colors.light.text, marginBottom: 6 }}>
+                    {t("migration.select_member") || "Member (leave blank = self)"}
+                  </Text>
+                  <Pressable
+                    style={{ backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 10, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+                    onPress={() => setShowMemberPicker(true)}
+                  >
+                    <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 14, color: migrationMemberId ? Colors.light.text : Colors.light.textMuted }}>
+                      {migrationMemberId ? groupMembers.find(m => m.id === migrationMemberId)?.name || t("auto.select_member") || "Select member" : t("auto.self") || "Self (Me)"}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={Colors.light.textSecondary} />
+                  </Pressable>
+                </>
+              )}
             </View>
           )}
 
@@ -325,6 +391,33 @@ export default function CreateLoanScreen() {
               </View>
             </Pressable>
           </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      {/* Member picker for migration mode */}
+      <Modal visible={showMemberPicker} transparent animationType="slide" onRequestClose={() => setShowMemberPicker(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowMemberPicker(false)}>
+          <View style={[styles.modalContent, { maxHeight: "70%" }]}>
+            <Text style={styles.modalTitle}>{t("migration.select_member") || "Select Member"}</Text>
+            <ScrollView>
+              <Pressable
+                style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.light.border }}
+                onPress={() => { setMigrationMemberId(null); setShowMemberPicker(false); }}
+              >
+                <Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.primary }}>{t("auto.self") || "Self (Me)"}</Text>
+              </Pressable>
+              {groupMembers.filter(m => m.status === "active" && m.id !== user?.id).map((m) => (
+                <Pressable
+                  key={m.id}
+                  style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.light.border, backgroundColor: migrationMemberId === m.id ? Colors.light.primary + "15" : "transparent" }}
+                  onPress={() => { setMigrationMemberId(m.id); setShowMemberPicker(false); }}
+                >
+                  <Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.text }}>{m.name}</Text>
+                  <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.light.textSecondary }}>{m.phone}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
         </Pressable>
       </Modal>
     </KeyboardAvoidingView>

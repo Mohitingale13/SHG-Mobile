@@ -2155,7 +2155,30 @@ export const translations: Record<string, any> = {
     "auth.confirm_password": { "en": "Confirm Password", "mr": "पासवर्डची पुष्टी करा" },
     "auth.save_password": { "en": "Save Password & Login", "mr": "पासवर्ड सेव्ह करा आणि लॉग इन करा" },
     "auth.passwords_do_not_match": { "en": "Passwords do not match", "mr": "पासवर्ड जुळत नाहीत" },
-    "auth.password_too_short": { "en": "Password must be at least 6 characters", "mr": "पासवर्ड किमान ६ वर्णांचा असावा" }
+    "auth.password_too_short": { "en": "Password must be at least 6 characters", "mr": "पासवर्ड किमान ६ वर्णांचा असावा" },
+    "setup.opening_balances": { "en": "Current Group Status", "mr": "गटाची सध्याची स्थिती" },
+    "setup.opening_balances_desc": { "en": "Please enter the total savings and cash your group currently has before you start using this app.", "mr": "हा ॲप वापरण्यास सुरुवात करण्यापूर्वी तुमच्या गटाकडे असलेली एकूण जमा रक्कम आणि रोख रक्कम (Cash in Hand) कृपया इथे टाका." },
+    "setup.opening_date": { "en": "App Starting Date", "mr": "ॲप वापरण्यास सुरुवात केलेली तारीख" },
+    "setup.opening_balances_note": { "en": "Note: You can add details about who took how much loan from the dashboard later.", "mr": "टीप: कोणत्या सदस्याने किती कर्ज घेतले आहे याचा तपशील तुम्ही नंतर डॅशबोर्डवरून जोडू शकता." },
+    "dashboard.complete_setup_title": { "en": "Complete Existing SHG Setup", "mr": "उर्वरित गट सेटअप पूर्ण करा" },
+    "dashboard.complete_setup_desc": { "en": "You can continue using the application now. Complete the remaining setup whenever you are ready.", "mr": "तुम्ही आता ॲप वापरणे सुरू ठेवू शकता. तुम्ही तयार असाल तेव्हा उर्वरित सेटअप पूर्ण करा." },
+    "dashboard.active_internal_loans": { "en": "Active Internal Loans", "mr": "सक्रिय अंतर्गत कर्जे" },
+    "dashboard.active_bank_loans": { "en": "Active Group Bank Loans", "mr": "सक्रिय गट बँक कर्जे" },
+    "dashboard.continue_setup": { "en": "Continue Setup", "mr": "सेटअप सुरू ठेवा" },
+    "dashboard.setup_which_loan": { "en": "Which loans would you like to add?", "mr": "तुम्हाला कोणती कर्जे जोडायची आहेत?" },
+    "cancel": { "en": "Cancel", "mr": "रद्द करा" },
+    "migration.entry_mode": { "en": "Old Record Entry", "mr": "जुनी कर्ज नोंद" },
+    "migration.entry_desc": { "en": "Use this to add a loan that was taken before you started using the app.", "mr": "ॲप वापरणे सुरू करण्यापूर्वी घेतलेले कर्ज जोडण्यासाठी याचा वापर करा." },
+    "migration.bank_entry_desc": { "en": "Use this to log a bank loan that existed before the app was set up.", "mr": "ॲप वापरणे सुरू करण्यापूर्वी घेतलेले बँक कर्ज जोडण्यासाठी याचा वापर करा." },
+    "migration.active_loan": { "en": "Still Active", "mr": "सक्रिय (अद्याप सुरू)" },
+    "migration.completed_loan": { "en": "Fully Repaid", "mr": "पूर्ण परतफेड" },
+    "migration.loan_date": { "en": "Disbursal Date", "mr": "कर्ज वाटप तारीख" },
+    "migration.outstanding_principal": { "en": "Outstanding Principal (Rs.)", "mr": "थकबाकी मुद्दल (रु.)" },
+    "migration.outstanding_principal_hint": { "en": "How much is still owed?", "mr": "अजून किती रक्कम भरणे बाकी आहे?" },
+    "migration.select_member": { "en": "Select Member (leave blank = self)", "mr": "सदस्य निवडा (रिकामे सोडल्यास = स्वतः)" },
+    "auto.self": { "en": "Self", "mr": "स्वतः" },
+    "auto.delete_meeting": { "en": "Delete Meeting", "mr": "बैठक हटवा" },
+    "auto.cancel_meeting": { "en": "Cancel Meeting", "mr": "बैठक रद्द करा" }
   }
 };
 
