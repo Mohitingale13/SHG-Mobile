@@ -548,6 +548,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setGroupSettings(settings);
   }, [user?.groupId]);
 
+  const updateSetupProgress = useCallback(async (progress: { internalLoans?: boolean; bankLoans?: boolean }) => {
+    if (!user?.groupId) return;
+    const { settings } = await apiPost<{ success: boolean; settings: GroupSettings }>(`/api/groups/${user.groupId}/setup-progress`, progress);
+    setGroupSettings(settings);
+  }, [user?.groupId]);
+
   const updateMember = useCallback(async (memberId: string, data: Partial<User>) => {
     const updated = await apiPatch<User>(`/api/members/${memberId}`, data);
     setGroupMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, ...updated } : m)));
@@ -638,7 +644,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       createBank, updateBank, deactivateBank,
       createGroupBankLoan, updateGroupBankLoan, deleteGroupBankLoan, closeGroupBankLoan,
       allocateBankLoanFunds, recordBankLoanRepayment, getBankLoanAllocationLedger,
-      updateGroupRules, updateGroupSettings, updateGroupInfo, updateMember, refreshData: loadData,
+      updateGroupRules, updateGroupSettings, updateSetupProgress, updateGroupInfo, updateMember, refreshData: loadData,
     }),
     [meetings, payments, loans, loanRepayments, loanLedgers, affiliatedBanks, groupBankLoans, bankLoanAllocations, groupMembers, groupRules, groupSettings, groupSummary, isMigrationWindow,
       createMeeting, updateMeeting, cancelMeeting, deleteMeeting,
@@ -649,7 +655,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       createBank, updateBank, deactivateBank,
       createGroupBankLoan, updateGroupBankLoan, deleteGroupBankLoan, closeGroupBankLoan,
       allocateBankLoanFunds, recordBankLoanRepayment, getBankLoanAllocationLedger,
-      updateGroupRules, updateGroupSettings, updateGroupInfo, updateMember, loadData],
+      updateGroupRules, updateGroupSettings, updateSetupProgress, updateGroupInfo, updateMember, loadData],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

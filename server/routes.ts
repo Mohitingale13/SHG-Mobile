@@ -84,31 +84,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/register/president", async (req, res) => {
     try {
-      const {
-        name,
-        phone,
-        password,
-        village,
-        joinDate,
-        exitDate,
-        uniqueGroupCode,
-      } = req.body;
+      const { name, phone, password, village, joinDate, exitDate, uniqueGroupCode } = req.body;
       if (!name || !phone || !password || !village || !uniqueGroupCode) {
         return res.status(400).json({ error: "Missing required fields" });
       }
 
       const existingGroup = await storage.getGroupByUniqueGroupCode(uniqueGroupCode);
-      if (!existingGroup) {
-        return res.status(404).json({ error: "groupNotFound" });
-      }
-      
+      if (!existingGroup) return res.status(404).json({ error: "groupNotFound" });
       if (existingGroup.presidentId || existingGroup.status !== "pending") {
         return res.status(409).json({ error: "Group already claimed" });
       }
 
-      const existingPhone = await storage.getUserByPhone(phone);
-      if (existingPhone) {
-        return res.status(409).json({ error: "Phone number already registered" });
+      // Identity-aware duplicate check: block only if already a member of THIS group
+      const existingIdentity = await storage.getIdentityByPhone(phone);
+      if (existingIdentity) {
+        const existingMembership = await storage.getMembershipByIdentityAndGroup(existingIdentity.id, existingGroup.groupId);
+        if (existingMembership) {
+          return res.status(409).json({ error: "alreadyMemberOfThisGroup" });
+        }
+      } else {
+        // Legacy fallback: also check old users table within same group
+        const usersInGroup = await storage.getUsersByGroupId(existingGroup.groupId);
+        if (usersInGroup.some(u => u.phone === phone)) {
+          return res.status(409).json({ error: "alreadyMemberOfThisGroup" });
+        }
       }
 
       const user = await storage.createUser({
@@ -130,12 +129,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         activatedOn: new Date(),
       });
 
+      // Create or reuse identity, then create membership
+      let identity = existingIdentity;
+      if (!identity) {
+        identity = await storage.createIdentity({ phone, password, name, preferredLanguage: existingGroup.preferredLanguage || "en" });
+      } else {
+        // Sync password to identity
+        await storage.updateIdentity(identity.id, { password });
+      }
+      const membership = await storage.createMembership({ identityId: identity.id, groupId: existingGroup.groupId, userId: user.id, role: "president", status: "active" });
+      await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membership.id });
+
       const session = await storage.createSession(user.id);
       const group = await storage.getGroupByGroupId(existingGroup.groupId);
       const { password: _p, ...safeUser } = user;
-      return res
-        .status(201)
-        .json({ token: session.token, user: safeUser, group });
+      return res.status(201).json({ token: session.token, user: safeUser, group });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Internal server error" });
@@ -150,32 +158,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const group = await storage.getGroupByUniqueGroupCode(uniqueGroupCode);
-      if (!group) {
-        return res.status(404).json({ error: "invalidOrExpiredCode" });
-      }
-      if (group.status === "pending") {
-        return res.status(404).json({ error: "groupNotFound" });
-      }
-      const existingPhone = await storage.getUserByPhone(phone);
-      let user;
+      if (!group) return res.status(404).json({ error: "invalidOrExpiredCode" });
+      if (group.status === "pending") return res.status(404).json({ error: "groupNotFound" });
 
-      if (existingPhone) {
-        if (existingPhone.password === "password123" && existingPhone.groupId === group.groupId) {
-          // Member was manually added by President, now they are completing registration
-          user = await storage.updateUser(existingPhone.id, {
-            name: name,
-            password: password,
-            village: village
-          });
+      // Identity-aware check
+      const existingIdentity = await storage.getIdentityByPhone(phone);
+      if (existingIdentity) {
+        const existingMembership = await storage.getMembershipByIdentityAndGroup(existingIdentity.id, group.groupId);
+        if (existingMembership) {
+          return res.status(409).json({ error: "alreadyMemberOfThisGroup" });
+        }
+      }
+
+      // Legacy: check if the phone was manually added by president in this group (password123 placeholder)
+      const usersInGroup = await storage.getUsersByGroupId(group.groupId);
+      const manuallyAdded = usersInGroup.find(u => u.phone === phone && u.password === "password123");
+
+      let user;
+      if (manuallyAdded) {
+        user = await storage.updateUser(manuallyAdded.id, { name, password, village });
+        // Sync to identity
+        if (existingIdentity) {
+          await storage.updateIdentity(existingIdentity.id, { password });
         } else {
-          return res.status(409).json({ error: "Phone number already registered" });
+          const identity = await storage.createIdentity({ phone, password, name, preferredLanguage: group.preferredLanguage || "en" });
+          const membership = await storage.createMembership({ identityId: identity.id, groupId: group.groupId, userId: manuallyAdded.id, role: manuallyAdded.role as any, status: "active" });
+          await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membership.id });
         }
       } else {
         user = await storage.createUser({
-          name,
-          phone,
-          password,
-          village,
+          name, phone, password, village,
           joinDate: joinDate ? new Date(joinDate) : now(req),
           exitDate: exitDate ? new Date(exitDate) : undefined,
           role: "member",
@@ -183,13 +195,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "active",
           preferredLanguage: group.preferredLanguage,
         });
+
+        let identity = existingIdentity;
+        if (!identity) {
+          identity = await storage.createIdentity({ phone, password, name, preferredLanguage: group.preferredLanguage || "en" });
+        } else {
+          await storage.updateIdentity(identity.id, { password });
+        }
+        const membership = await storage.createMembership({ identityId: identity.id, groupId: group.groupId, userId: user.id, role: "member", status: "active" });
+        if (!existingIdentity?.lastOpenedMembershipId) {
+          await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membership.id });
+        }
       }
 
       const session = await storage.createSession(user.id);
       const { password: _p, ...safeUser } = user;
-      return res
-        .status(201)
-        .json({ token: session.token, user: safeUser, group });
+      return res.status(201).json({ token: session.token, user: safeUser, group });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Internal server error" });
@@ -214,16 +235,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { phone, password } = req.body;
+      const { phone, password, membershipId } = req.body;
       if (!phone || !password) {
         return res.status(400).json({ error: "Phone and password required" });
       }
 
+      // ── New identity-based login ──
+      const identity = await storage.getIdentityByPhone(phone);
+      if (identity) {
+        if (identity.password !== password) {
+          return res.status(401).json({ error: "invalidCredentials" });
+        }
+        const allMemberships = await storage.getMembershipsByIdentityId(identity.id);
+        const active = allMemberships.filter(m => m.status === "active");
+        if (active.length === 0) {
+          return res.status(401).json({ error: "invalidCredentials" });
+        }
+
+        // Determine which membership to activate
+        let targetMembership = membershipId
+          ? active.find(m => m.id === membershipId)
+          : identity.lastOpenedMembershipId
+            ? active.find(m => m.id === identity.lastOpenedMembershipId)
+            : undefined;
+
+        if (!targetMembership && active.length === 1) {
+          targetMembership = active[0];
+        }
+
+        if (!targetMembership) {
+          // Multiple memberships, no preference — return selection list
+          const groups = await Promise.all(active.map(async m => {
+            const grp = await storage.getGroupByGroupId(m.groupId);
+            return { membershipId: m.id, groupId: m.groupId, groupName: grp?.name || m.groupId, role: m.role, village: grp?.village };
+          }));
+          return res.json({ requiresGroupSelection: true, memberships: groups });
+        }
+
+        // Issue session for the target membership's user row
+        const user = await storage.getUserById(targetMembership.userId);
+        if (!user) return res.status(401).json({ error: "invalidCredentials" });
+        await storage.updateIdentity(identity.id, { lastOpenedMembershipId: targetMembership.id });
+        const session = await storage.createSession(user.id);
+        const group = await storage.getGroupByGroupId(user.groupId);
+        const { password: _p, ...safeUser } = user;
+        return res.json({ token: session.token, user: safeUser, group });
+      }
+
+      // ── Legacy fallback for users not yet in identities table ──
       const user = await storage.getUserByPhone(phone);
       if (!user || user.password !== password) {
         return res.status(401).json({ error: "invalidCredentials" });
       }
-
       const session = await storage.createSession(user.id);
       const group = await storage.getGroupByGroupId(user.groupId);
       const { password: _p, ...safeUser } = user;
@@ -243,22 +306,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!newPassword) {
           return res.status(400).json({ error: "Password cannot be empty" });
         }
-        
         const user = await storage.getUserById(req.currentUser!.id);
         if (!user || (currentPassword && user.password !== currentPassword)) {
           return res.status(401).json({ error: "Invalid current password" });
         }
-        
         const updateData: any = { password: newPassword };
-        if (village) {
-          updateData.village = village;
-        }
-        
+        if (village) updateData.village = village;
         const updatedUser = await storage.updateUser(user.id, updateData);
-        if (!updatedUser) {
-          return res.status(500).json({ error: "Failed to update password" });
+        if (!updatedUser) return res.status(500).json({ error: "Failed to update password" });
+
+        // Sync password to identity and ALL membership user rows for this phone
+        const identity = await storage.getIdentityByPhone(user.phone);
+        if (identity) {
+          await storage.updateIdentity(identity.id, { password: newPassword });
+          // Update password on all user rows belonging to this identity
+          const memberships = await storage.getMembershipsByIdentityId(identity.id);
+          for (const m of memberships) {
+            if (m.userId !== user.id) {
+              await storage.updateUser(m.userId, { password: newPassword });
+            }
+          }
         }
-        
+
         const { password: _p, ...safeUser } = updatedUser;
         return res.json({ ok: true, user: safeUser });
       } catch (e) {
@@ -290,6 +359,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // ── Select membership (second step for multi-SHG login) ──────────────────
+  app.post("/api/auth/select-membership", async (req, res) => {
+    try {
+      const { phone, password, membershipId } = req.body;
+      if (!phone || !password || !membershipId) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const identity = await storage.getIdentityByPhone(phone);
+      if (!identity || identity.password !== password) {
+        return res.status(401).json({ error: "invalidCredentials" });
+      }
+      const membership = await storage.getMembershipById(membershipId);
+      if (!membership || membership.identityId !== identity.id || membership.status !== "active") {
+        return res.status(403).json({ error: "invalidMembership" });
+      }
+      const user = await storage.getUserById(membership.userId);
+      if (!user) return res.status(401).json({ error: "invalidCredentials" });
+      await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membershipId });
+      const session = await storage.createSession(user.id);
+      const group = await storage.getGroupByGroupId(user.groupId);
+      const { password: _p, ...safeUser } = user;
+      return res.json({ token: session.token, user: safeUser, group });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Switch membership (from inside the app) ───────────────────────────────
+  app.post(
+    "/api/auth/switch-membership",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { membershipId, password } = req.body;
+        if (!membershipId || !password) {
+          return res.status(400).json({ error: "Missing required fields" });
+        }
+        const currentUser = req.currentUser!;
+        const identity = await storage.getIdentityByPhone(currentUser.phone);
+        if (!identity || identity.password !== password) {
+          return res.status(401).json({ error: "invalidCredentials" });
+        }
+        const membership = await storage.getMembershipById(membershipId);
+        if (!membership || membership.identityId !== identity.id || membership.status !== "active") {
+          return res.status(403).json({ error: "invalidMembership" });
+        }
+        const targetUser = await storage.getUserById(membership.userId);
+        if (!targetUser) return res.status(401).json({ error: "invalidCredentials" });
+        // Invalidate current session
+        if (req.currentSession) {
+          await storage.deleteSession(req.currentSession.token);
+        }
+        await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membershipId });
+        const session = await storage.createSession(targetUser.id);
+        const group = await storage.getGroupByGroupId(targetUser.groupId);
+        const { password: _p, ...safeUser } = targetUser;
+        return res.json({ token: session.token, user: safeUser, group });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // ── My Memberships (all groups for the current identity) ──────────────────
+  app.get(
+    "/api/auth/my-memberships",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const currentUser = req.currentUser!;
+        const identity = await storage.getIdentityByPhone(currentUser.phone);
+        if (!identity) {
+          // Legacy account: return single entry
+          const group = await storage.getGroupByGroupId(currentUser.groupId);
+          return res.json({ memberships: [{ membershipId: null, groupId: currentUser.groupId, groupName: group?.name || currentUser.groupId, role: currentUser.role, village: group?.village }] });
+        }
+        const allMemberships = await storage.getMembershipsByIdentityId(identity.id);
+        const active = allMemberships.filter(m => m.status === "active");
+        const result = await Promise.all(active.map(async m => {
+          const grp = await storage.getGroupByGroupId(m.groupId);
+          return { membershipId: m.id, groupId: m.groupId, groupName: grp?.name || m.groupId, role: m.role, village: grp?.village };
+        }));
+        return res.json({ memberships: result });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
   app.post(
     "/api/groups/:groupId/members",
     requireAuth as any,
@@ -302,8 +463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (!name || !phone) return res.status(400).json({ error: "Name and phone are required" });
         
-        const existingPhone = await storage.getUserByPhone(phone);
-        if (existingPhone) {
+        const existingUsersInGroup = await storage.getUsersByGroupId(groupId);
+        if (existingUsersInGroup.some(u => u.phone === phone.trim())) {
           return res.status(409).json({ error: "Phone number already registered" });
         }
 

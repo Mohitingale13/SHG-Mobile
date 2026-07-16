@@ -132,7 +132,7 @@ function QrSection() {
 
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
-  const { user, group, logout, isPresident, isTreasurer } = useAuth();
+  const { user, group, logout, isPresident, isTreasurer, loadMyMemberships } = useAuth();
   const { t, language, setLanguage } = useLanguage();
 
   const roleLabel = isPresident ? t("president") : isTreasurer ? t("treasurer") : t("member");
@@ -174,6 +174,21 @@ export default function MoreScreen() {
             </View>
           </View>
           {group && <Text style={styles.profileGroup}>{group.name}</Text>}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>{t("auto.account") || "Account"}</Text>
+        <View style={styles.menuGroup}>
+          <MenuItem
+            icon="swap-horizontal-outline"
+            label={t("auto.my_groups") || "My Groups"}
+            onPress={() => {
+              loadMyMemberships();
+              router.push("/my-groups" as any);
+            }}
+            color={Colors.light.primary}
+          />
         </View>
       </View>
 

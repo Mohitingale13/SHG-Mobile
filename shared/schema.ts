@@ -8,6 +8,7 @@ import {
   jsonb,
   timestamp,
   index,
+  uniqueIndex,
   boolean,
 } from "drizzle-orm/pg-core";
 
@@ -16,7 +17,7 @@ export const users = pgTable("users", {
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  phone: varchar("phone", { length: 20 }).notNull().unique(),
+  phone: varchar("phone", { length: 20 }).notNull(),
   password: text("password").notNull(),
   village: text("village").notNull(),
   joinDate: timestamp("join_date").notNull(),
@@ -303,3 +304,32 @@ export type BankLoanAllocation = typeof bankLoanAllocations.$inferSelect;
 export type BankLoanRepayment = typeof bankLoanRepayments.$inferSelect;
 export type BankLoanLedgerEntry = typeof bankLoanLedger.$inferSelect;
 export type LoanLedgerEntry = typeof loanLedger.$inferSelect;
+
+// ─── Identity & Membership tables ────────────────────────────────────────────
+
+export const identities = pgTable("identities", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  phone: varchar("phone", { length: 20 }).notNull().unique(),
+  password: text("password").notNull(),
+  name: text("name").notNull(),
+  preferredLanguage: varchar("preferred_language", { length: 10 }).default("en"),
+  lastOpenedMembershipId: varchar("last_opened_membership_id", { length: 36 }),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export const memberships = pgTable("memberships", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  identityId: varchar("identity_id", { length: 36 }).notNull(),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
+  role: varchar("role", { length: 20 }).notNull().default("member"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (t) => ({
+  membershipUnique: uniqueIndex("membership_identity_group_idx").on(t.identityId, t.groupId),
+  membershipGroupIdx: index("membership_group_idx").on(t.groupId),
+}));
+
+export type Identity = typeof identities.$inferSelect;
+export type Membership = typeof memberships.$inferSelect;

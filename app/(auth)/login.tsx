@@ -46,7 +46,9 @@ export default function LoginScreen() {
     setLoading(true);
     const result = await login(phone.trim(), password);
     setLoading(false);
-    if (result.success) {
+    if (result.requiresGroupSelection) {
+      router.push("/(auth)/select-shg");
+    } else if (result.success) {
       if (password === "password123") {
         router.replace("/(auth)/change-password");
       } else if (result.role === "super_admin") {

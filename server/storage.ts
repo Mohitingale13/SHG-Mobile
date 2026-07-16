@@ -233,6 +233,27 @@ export interface Session {
   createdAt: Date;
 }
 
+export interface Identity {
+  id: string;
+  phone: string;
+  password: string;
+  name: string;
+  preferredLanguage?: string;
+  lastOpenedMembershipId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IdentityMembership {
+  id: string;
+  identityId: string;
+  groupId: string;
+  userId: string;
+  role: UserRole;
+  status: "active" | "left";
+  createdAt: string;
+}
+
 const DEFAULT_SETTINGS: GroupSettings = {
   interestRate: 2,
   maxLoanAmount: 50000,
@@ -345,6 +366,18 @@ export interface IStorage {
     ledgerEntry: Omit<BankLoanLedgerEntry, "id" | "createdAt">,
     snapshotUpdate: { outstandingBalance: number; outstandingInterest: number; totalPrincipalPaid: number; totalInterestPaid: number; status?: string }
   ): Promise<BankLoanRepayment>;
+
+  // Identity & Membership
+  getIdentityByPhone(phone: string): Promise<Identity | undefined>;
+  getIdentityById(id: string): Promise<Identity | undefined>;
+  createIdentity(data: Omit<Identity, "id" | "createdAt" | "updatedAt">): Promise<Identity>;
+  updateIdentity(id: string, data: Partial<Identity>): Promise<Identity | undefined>;
+  getMembershipById(id: string): Promise<IdentityMembership | undefined>;
+  getMembershipsByIdentityId(identityId: string): Promise<IdentityMembership[]>;
+  getMembershipByIdentityAndGroup(identityId: string, groupId: string): Promise<IdentityMembership | undefined>;
+  getMembershipsByGroupId(groupId: string): Promise<IdentityMembership[]>;
+  createMembership(data: Omit<IdentityMembership, "id" | "createdAt">): Promise<IdentityMembership>;
+  updateMembership(id: string, data: Partial<IdentityMembership>): Promise<IdentityMembership | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -619,6 +652,25 @@ export class MemStorage implements IStorage {
   async deleteBank(id: string): Promise<void> {
     this.banks.delete(id);
   }
+
+  // ── Identity & Membership (MemStorage stubs — not used in production) ──
+  async getIdentityByPhone(_phone: string): Promise<Identity | undefined> { return undefined; }
+  async getIdentityById(_id: string): Promise<Identity | undefined> { return undefined; }
+  async createIdentity(data: Omit<Identity, "id" | "createdAt" | "updatedAt">): Promise<Identity> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    return { ...data, id, createdAt: now, updatedAt: now };
+  }
+  async updateIdentity(_id: string, _data: Partial<Identity>): Promise<Identity | undefined> { return undefined; }
+  async getMembershipById(_id: string): Promise<IdentityMembership | undefined> { return undefined; }
+  async getMembershipsByIdentityId(_identityId: string): Promise<IdentityMembership[]> { return []; }
+  async getMembershipByIdentityAndGroup(_identityId: string, _groupId: string): Promise<IdentityMembership | undefined> { return undefined; }
+  async getMembershipsByGroupId(_groupId: string): Promise<IdentityMembership[]> { return []; }
+  async createMembership(data: Omit<IdentityMembership, "id" | "createdAt">): Promise<IdentityMembership> {
+    const id = randomUUID();
+    return { ...data, id, createdAt: new Date().toISOString() };
+  }
+  async updateMembership(_id: string, _data: Partial<IdentityMembership>): Promise<IdentityMembership | undefined> { return undefined; }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1263,6 +1315,64 @@ export class DatabaseStorage implements IStorage {
     const yearStr = String(year);
     const count = allReps.filter(r => r.receiptNo.includes(`BLR-${yearStr}-`)).length;
     return count + 1;
+  }
+
+  // ── Identity & Membership ───────────────────────────────────────────────────
+
+  async getIdentityByPhone(phone: string): Promise<Identity | undefined> {
+    const rows = await this.db.select().from(schema.identities).where(eq(schema.identities.phone, phone));
+    return rows[0] as Identity | undefined;
+  }
+
+  async getIdentityById(id: string): Promise<Identity | undefined> {
+    const rows = await this.db.select().from(schema.identities).where(eq(schema.identities.id, id));
+    return rows[0] as Identity | undefined;
+  }
+
+  async createIdentity(data: Omit<Identity, "id" | "createdAt" | "updatedAt">): Promise<Identity> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(schema.identities).values({ ...data, id, createdAt: now, updatedAt: now });
+    return { ...data, id, createdAt: now.toISOString(), updatedAt: now.toISOString() };
+  }
+
+  async updateIdentity(id: string, data: Partial<Identity>): Promise<Identity | undefined> {
+    await this.db.update(schema.identities).set({ ...data, updatedAt: new Date() }).where(eq(schema.identities.id, id));
+    return this.getIdentityById(id);
+  }
+
+  async getMembershipById(id: string): Promise<IdentityMembership | undefined> {
+    const rows = await this.db.select().from(schema.memberships).where(eq(schema.memberships.id, id));
+    return rows[0] as IdentityMembership | undefined;
+  }
+
+  async getMembershipsByIdentityId(identityId: string): Promise<IdentityMembership[]> {
+    const rows = await this.db.select().from(schema.memberships).where(eq(schema.memberships.identityId, identityId));
+    return rows as IdentityMembership[];
+  }
+
+  async getMembershipByIdentityAndGroup(identityId: string, groupId: string): Promise<IdentityMembership | undefined> {
+    const rows = await this.db.select().from(schema.memberships).where(
+      and(eq(schema.memberships.identityId, identityId), eq(schema.memberships.groupId, groupId))
+    );
+    return rows[0] as IdentityMembership | undefined;
+  }
+
+  async getMembershipsByGroupId(groupId: string): Promise<IdentityMembership[]> {
+    const rows = await this.db.select().from(schema.memberships).where(eq(schema.memberships.groupId, groupId));
+    return rows as IdentityMembership[];
+  }
+
+  async createMembership(data: Omit<IdentityMembership, "id" | "createdAt">): Promise<IdentityMembership> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(schema.memberships).values({ ...data, id, createdAt: now });
+    return { ...data, id, createdAt: now.toISOString() };
+  }
+
+  async updateMembership(id: string, data: Partial<IdentityMembership>): Promise<IdentityMembership | undefined> {
+    await this.db.update(schema.memberships).set(data).where(eq(schema.memberships.id, id));
+    return this.getMembershipById(id);
   }
 
 }

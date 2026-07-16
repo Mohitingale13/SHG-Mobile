@@ -48,6 +48,7 @@ function RootLayoutNav() {
       <Stack.Screen name="create-bank-loan" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="bank-loan/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="bank-loan/allocation/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="my-groups" options={{ headerShown: false }} />
     </Stack>
   );
 }

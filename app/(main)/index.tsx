@@ -32,7 +32,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { user, group, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
-  const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations } = useData();
+  const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations, updateSetupProgress } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const [dismissedSavings, setDismissedSavings] = useState(false);
@@ -556,11 +556,19 @@ export default function DashboardScreen() {
           !groupSettings?.setupProgress?.internalLoans || !groupSettings?.setupProgress?.bankLoans
         ) && (
           <View style={{ backgroundColor: "#F0F9FF", borderWidth: 1, borderColor: "#BAE6FD", borderRadius: 12, padding: 16, marginBottom: 20 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <Ionicons name="information-circle" size={20} color="#0369A1" />
-              <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 16, color: "#0369A1" }}>
-                {t("dashboard.complete_setup_title") || "Complete Existing SHG Setup"}
-              </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="information-circle" size={20} color="#0369A1" />
+                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 16, color: "#0369A1" }}>
+                  {t("dashboard.complete_setup_title") || "Complete Existing SHG Setup"}
+                </Text>
+              </View>
+              <Pressable 
+                onPress={() => updateSetupProgress({ internalLoans: true, bankLoans: true })}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={20} color="#0369A1" />
+              </Pressable>
             </View>
             <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#075985", marginBottom: 12, lineHeight: 20 }}>
               {t("dashboard.complete_setup_desc") || "You can continue using the application now. Complete the remaining setup whenever you are ready."}
