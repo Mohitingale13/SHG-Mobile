@@ -17,7 +17,7 @@ function StatCard({ icon, label, value, color, onPress }: { icon: string; label:
       <View style={styles.statCardHeader}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
           <Ionicons name={icon as any} size={16} color={color} />
-          <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
+          <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
         </View>
         {onPress && <Ionicons name="chevron-forward" size={14} color={Colors.light.textMuted} />}
       </View>
@@ -431,8 +431,8 @@ export default function DashboardScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 16,
-            paddingBottom: insets.bottom + 120,
+            paddingTop: (Platform.OS === "web" ? 16 : insets.top + 16),
+            paddingBottom: insets.bottom + 60,
           },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.light.primary} />}

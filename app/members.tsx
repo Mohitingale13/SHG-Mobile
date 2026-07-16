@@ -211,16 +211,19 @@ export default function MembersScreen() {
           </Pressable>
           <Text style={styles.title}>{t("members")}</Text>
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={styles.countText}>{activeMembers.length} {t("active")}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.light.success + "15", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.light.success }} />
+            <Text style={{ fontSize: 13, color: Colors.light.success, fontFamily: "Poppins_600SemiBold" }}>{activeMembers.length}</Text>
+          </View>
           {isPresident && (
             <>
-              <Pressable style={styles.inviteBtn} onPress={() => setShowAddMemberModal(true)}>
-                <Ionicons name="person-add" size={16} color="#fff" />
+              <Pressable style={[styles.inviteBtn, { paddingHorizontal: 10 }]} onPress={() => setShowAddMemberModal(true)}>
+                <Ionicons name="person-add" size={14} color="#fff" />
                 <Text style={styles.inviteBtnText}>{t("add") || "Add"}</Text>
               </Pressable>
-              <Pressable style={[styles.inviteBtn, {backgroundColor: Colors.light.secondary}]} onPress={() => setShowInviteModal(true)}>
-                <Ionicons name="share-social" size={16} color="#fff" />
+              <Pressable style={[styles.inviteBtn, {backgroundColor: Colors.light.secondary, paddingHorizontal: 10}]} onPress={() => setShowInviteModal(true)}>
+                <Ionicons name="share-social" size={14} color="#fff" />
                 <Text style={styles.inviteBtnText}>{t("members.invite")}</Text>
               </Pressable>
             </>
