@@ -74,7 +74,7 @@ export default function LoginScreen() {
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 40, paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 40, paddingBottom: insets.bottom + 20 }]}
         keyboardShouldPersistTaps="handled"
       >
         <Pressable
@@ -222,6 +222,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.light.text,
     paddingVertical: 16,
+    ...Platform.select({ web: { outlineStyle: "none" } as any, default: {} }),
   },
   eyeBtn: {
     padding: 8,

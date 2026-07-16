@@ -60,7 +60,7 @@ export default function MeetingsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <Text style={styles.title}>{t("meetings")}</Text>
         {(isPresident || isTreasurer) && (
           <Pressable
@@ -76,7 +76,7 @@ export default function MeetingsScreen() {
         data={sortedMeetings}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <MeetingItem meeting={item} />}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 20 }]}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="calendar-outline" size={48} color={Colors.light.textMuted} />

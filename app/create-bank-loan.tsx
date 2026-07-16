@@ -56,6 +56,8 @@ export default function CreateBankLoanScreen() {
 
   const handleSubmit = async () => {
     if (!bankName.trim()) { Alert.alert(t("error"), t("bank_loan.error_bank_name_required")); return; }
+    if (!accountNumber.trim()) { Alert.alert(t("error"), t("bank_loan.error_account_required") || "Account Number is required"); return; }
+    if (!ifscCode.trim()) { Alert.alert(t("error"), t("bank_loan.error_ifsc_required") || "IFSC Code is required"); return; }
     if (!amount || Number(amount) <= 0) { Alert.alert(t("error"), t("bank_loan.error_amount_required")); return; }
     if (!annualInterestRate || Number(annualInterestRate) <= 0) { Alert.alert(t("error"), t("bank_loan.error_rate_required")); return; }
     if (!durationMonths || Number(durationMonths) <= 0) { Alert.alert(t("error"), t("bank_loan.error_duration_required")); return; }
@@ -113,11 +115,11 @@ export default function CreateBankLoanScreen() {
 
         <View style={styles.row}>
           <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>{t("accountNumber")}</Text>
+            <Text style={styles.label}>{t("accountNumber")} *</Text>
             <TextInput style={styles.input} placeholder="e.g. 1234567890" keyboardType="number-pad" value={accountNumber} onChangeText={setAccountNumber} />
           </View>
           <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>{t("bank_loan.ifsc")}</Text>
+            <Text style={styles.label}>{t("bank_loan.ifsc")} *</Text>
             <TextInput style={styles.input} placeholder="e.g. SBIN0001234" autoCapitalize="characters" value={ifscCode} onChangeText={setIfscCode} />
           </View>
         </View>
@@ -228,7 +230,7 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontSize: 20, fontFamily: "Poppins_600SemiBold", color: Colors.light.text },
   content: { padding: 20, gap: 14 },
   sectionLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: Colors.light.primary, textTransform: "uppercase", letterSpacing: 0.5 },
-  inputGroup: { gap: 6 },
+  inputGroup: { gap: 6, justifyContent: "flex-end" },
   row: { flexDirection: "row", gap: 12 },
   label: { fontSize: 14, fontFamily: "Poppins_500Medium", color: Colors.light.text },
   input: { backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 12, padding: 14, fontFamily: "Poppins_400Regular", fontSize: 15, color: Colors.light.text },

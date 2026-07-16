@@ -65,7 +65,7 @@ export default function ChangePasswordScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 40, paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 40, paddingBottom: insets.bottom + 20 }]}
         keyboardShouldPersistTaps="handled"
       >
         <Pressable

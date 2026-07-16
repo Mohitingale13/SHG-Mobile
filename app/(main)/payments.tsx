@@ -378,7 +378,7 @@ export default function PaymentsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <View>
           <Text style={styles.title}>{t("payments")}</Text>
           {pendingCashCount + pendingOnlineCount > 0 && (
@@ -535,7 +535,7 @@ export default function PaymentsScreen() {
             onDelete={setDeletePaymentId}
           />
         )}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 20 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.light.primary} />}
         ListEmptyComponent={
           <View style={styles.empty}>

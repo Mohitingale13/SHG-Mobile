@@ -132,6 +132,7 @@ export default function MembersScreen() {
   const { t } = useLanguage();
   const { groupMembers, updateMemberStatus, assignTreasurer } = useData();
   const [showModal, setShowModal] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
   const [selectedMember, setSelectedMember] = useState<User | null>(null);
   
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -188,11 +189,13 @@ export default function MembersScreen() {
 
   const confirmAssign = async () => {
     if (!selectedMember) return;
+    setAssignLoading(true);
     const isAlreadyTreasurer = selectedMember.id === group?.treasurerId;
     try {
       await assignTreasurer(isAlreadyTreasurer ? null : selectedMember.id);
       await refreshSession();
     } catch {}
+    setAssignLoading(false);
     setShowModal(false);
   };
 
@@ -204,7 +207,7 @@ export default function MembersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Pressable onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
@@ -306,11 +309,22 @@ export default function MembersScreen() {
                 <Text style={styles.modalCancelText}>{t("cancel")}</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalConfirmBtn, { backgroundColor: isRemoving ? Colors.light.danger : "#D97706" }]}
+                style={[
+                  styles.modalConfirmBtn,
+                  { backgroundColor: isRemoving ? Colors.light.danger : "#D97706" },
+                  assignLoading && { opacity: 0.7 }
+                ]}
                 onPress={confirmAssign}
+                disabled={assignLoading}
               >
-                <Ionicons name={isRemoving ? "close" : "checkmark"} size={18} color="#fff" />
-                <Text style={styles.modalConfirmText}>{t("confirm")}</Text>
+                {assignLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name={isRemoving ? "close" : "checkmark"} size={18} color="#fff" />
+                    <Text style={styles.modalConfirmText}>{t("confirm")}</Text>
+                  </>
+                )}
               </Pressable>
             </View>
           </Pressable>

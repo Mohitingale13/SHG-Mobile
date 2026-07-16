@@ -428,7 +428,7 @@ export default function ReportsScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 16,
+            paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 16,
             paddingBottom: insets.bottom + 40,
           },
         ]}

@@ -133,7 +133,7 @@ export default function LoansScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <Pressable onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </Pressable>

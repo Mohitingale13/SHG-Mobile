@@ -156,7 +156,7 @@ export default function MoreScreen() {
       style={styles.container}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12, paddingBottom: insets.bottom + 100 },
+        { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12, paddingBottom: insets.bottom + 20 },
       ]}
     >
       <Text style={styles.title}>{t("more")}</Text>
@@ -267,7 +267,6 @@ export default function MoreScreen() {
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.infoLabel}>Group ID: {user?.groupId}</Text>
         <Text style={styles.infoLabel}>{t("common.app_version")}</Text>
       </View>
 

@@ -81,7 +81,7 @@ export default function CreateMeetingScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12,
+            paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12,
             paddingBottom: insets.bottom + 40,
           },
         ]}

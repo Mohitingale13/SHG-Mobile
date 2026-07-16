@@ -1197,7 +1197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const principal = Number(amount);
       const rate = settings.interestRate;
       const dur = Number(duration);
-      const totalInterest = Math.round(principal * (rate / 100) * dur);
+      const totalInterest = Math.round((principal * (rate / 100) * (dur + 1)) / 2);
       const totalRepayable = principal + totalInterest;
       const method = "reducing_balance"; 
       

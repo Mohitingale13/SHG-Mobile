@@ -187,7 +187,7 @@ export default function CreateLoanScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12,
+            paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12,
             paddingBottom: insets.bottom + 40,
           },
         ]}
@@ -312,7 +312,7 @@ export default function CreateLoanScreen() {
                   {t("interest")} ({groupSettings?.interestRate || 2}% {t("Per month")})
                 </Text>
                 <Text style={styles.summaryValue}>
-                  + Rs. {Math.round(numAmount * (groupSettings?.interestRate || 2) / 100 * numDuration).toLocaleString("en-IN")}
+                  + Rs. {Math.round((numAmount * (groupSettings?.interestRate || 2) / 100 * (numDuration + 1)) / 2).toLocaleString("en-IN")}
                 </Text>
               </View>
 
@@ -321,7 +321,7 @@ export default function CreateLoanScreen() {
                   {t("Total amount to Return")}
                 </Text>
                 <Text style={[styles.summaryValue, { fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.light.primary }]}>
-                  Rs. {(numAmount + Math.round(numAmount * (groupSettings?.interestRate || 2) / 100 * numDuration)).toLocaleString("en-IN")}
+                  Rs. {(numAmount + Math.round((numAmount * (groupSettings?.interestRate || 2) / 100 * (numDuration + 1)) / 2)).toLocaleString("en-IN")}
                 </Text>
               </View>
             </View>
