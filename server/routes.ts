@@ -1191,18 +1191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "durationTooLong" });
 
       const group = await storage.getGroupByGroupId(groupId);
-      
-      let targetMemberId = user.id;
-      let targetMemberName = user.name;
-      
-      if (memberId && (user.role === "president" || user.role === "treasurer")) {
-        const targetUser = await storage.getUserById(memberId);
-        if (targetUser && targetUser.groupId === groupId) {
-          targetMemberId = targetUser.id;
-          targetMemberName = targetUser.name;
-        }
-      }
-      
+
       let initialStatus = group?.treasurerId ? "pending_treasurer" : "pending_president";
 
       const principal = Number(amount);
