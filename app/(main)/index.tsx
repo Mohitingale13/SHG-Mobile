@@ -32,7 +32,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { user, group, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
-  const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations, updateSetupProgress } = useData();
+  const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations, updateGroupSettings } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   const [dismissedSavings, setDismissedSavings] = useState(false);
@@ -564,7 +564,18 @@ export default function DashboardScreen() {
                 </Text>
               </View>
               <Pressable 
-                onPress={() => updateSetupProgress({ internalLoans: true, bankLoans: true })}
+                onPress={() => {
+                  if (groupSettings) {
+                    updateGroupSettings({
+                      ...groupSettings,
+                      setupProgress: {
+                        ...groupSettings.setupProgress,
+                        internalLoans: true,
+                        bankLoans: true
+                      }
+                    });
+                  }
+                }}
                 hitSlop={8}
               >
                 <Ionicons name="close" size={20} color="#0369A1" />
@@ -619,7 +630,7 @@ export default function DashboardScreen() {
         )}
 
         {/* ── PERSONAL ACTION REQUIRED (Disposable Card) ── */}
-        {user && groupSettings?.setupProgress?.settings && (() => {
+        {user && (() => {
           const now = new Date();
           const myConfirmedThisMonth = payments.find(
             p => p.memberId === user.id && p.status === "confirmed" &&
