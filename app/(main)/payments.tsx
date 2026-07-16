@@ -215,6 +215,7 @@ export default function PaymentsScreen() {
   const { t, language } = useLanguage();
   const { payments, groupMembers, recordPayment, verifyPayment, reopenPayment, deletePayment, refreshData } = useData();
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filters State
   const [filterMonth, setFilterMonth] = useState<string>("all");
@@ -302,9 +303,11 @@ export default function PaymentsScreen() {
 
   const handleConfirmDelete = async () => {
     if (!deletePaymentId) return;
+    setIsDeleting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await deletePayment(deletePaymentId);
     setDeletePaymentId(null);
+    setIsDeleting(false);
   };
 
   const filteredPayments = useMemo(() => {
@@ -575,8 +578,9 @@ export default function PaymentsScreen() {
         confirmText={t("auto.delete")}
         cancelText={t("cancel")}
         destructive
+        isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
-        onCancel={() => setDeletePaymentId(null)}
+        onCancel={() => { if (!isDeleting) setDeletePaymentId(null); }}
       />
     </View>
   );

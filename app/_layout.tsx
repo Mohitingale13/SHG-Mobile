@@ -21,7 +21,8 @@ import {
 SplashScreen.preventAutoHideAsync();
 LogBox.ignoreLogs([
   "props.pointerEvents is deprecated",
-  "Support for defaultProps will be removed from function components"
+  "Support for defaultProps will be removed from function components",
+  "\"shadow*\" style props are deprecated. Use \"boxShadow\"."
 ]);
 
 function RootLayoutNav() {
@@ -47,6 +48,7 @@ function RootLayoutNav() {
       <Stack.Screen name="create-bank-loan" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="bank-loan/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="bank-loan/allocation/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="my-groups" options={{ headerShown: false }} />
     </Stack>
   );
 }

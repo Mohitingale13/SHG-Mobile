@@ -21,7 +21,7 @@ interface SHGDatePickerProps {
 }
 
 const MONTHS_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-const DAYS_KEYS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa'];
+const DAYS_KEYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function SHGDatePicker({
   mode = 'date',
@@ -43,13 +43,16 @@ export default function SHGDatePicker({
   const [currentViewDate, setCurrentViewDate] = useState(initialDate);
   const [rangeStart, setRangeStart] = useState<string | null>(mode === 'date-range' && value ? value.split(':')[0] : null);
   const [rangeEnd, setRangeEnd] = useState<string | null>(mode === 'date-range' && value && value.includes(':') ? value.split(':')[1] : null);
+  const [internalView, setInternalView] = useState<DatePickerMode>(mode);
 
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
 
   const handleDaySelect = (day: number) => {
-    const selected = new Date(currentViewDate.getFullYear(), currentViewDate.getMonth(), day);
-    const dateStr = selected.toISOString().split('T')[0];
+    const y = currentViewDate.getFullYear();
+    const m = String(currentViewDate.getMonth() + 1).padStart(2, '0');
+    const d = String(day).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
 
     if (mode === 'date') {
       onSelect(dateStr);
@@ -87,6 +90,9 @@ export default function SHGDatePicker({
       const nd = new Date(currentViewDate);
       nd.setMonth(monthIdx);
       setCurrentViewDate(nd);
+      if (mode === 'date' || mode === 'date-range') {
+        setInternalView(mode);
+      }
     }
   };
 
@@ -98,6 +104,11 @@ export default function SHGDatePicker({
       const nd = new Date(currentViewDate);
       nd.setFullYear(year);
       setCurrentViewDate(nd);
+      if (mode === 'date' || mode === 'date-range' || mode === 'month-year') {
+        setInternalView(mode === 'month-year' ? 'month-year' : 'month');
+      } else {
+        setInternalView(mode);
+      }
     }
   };
 
@@ -163,7 +174,7 @@ export default function SHGDatePicker({
 
   const renderYears = () => {
     const currentYear = new Date().getFullYear();
-    const years = Array.from({ length: 20 }, (_, i) => currentYear - 10 + i);
+    const years = Array.from({ length: 50 }, (_, i) => currentYear - i);
     
     return years.map((y) => {
       const isSelected = mode === 'year' ? value === String(y) : currentViewDate.getFullYear() === y;
@@ -189,7 +200,10 @@ export default function SHGDatePicker({
   }
 
   const handleOpen = () => {
-    if (!disabled) setModalVisible(true);
+    if (!disabled) {
+      setInternalView(mode);
+      setModalVisible(true);
+    }
   };
 
   return (
@@ -213,13 +227,16 @@ export default function SHGDatePicker({
               </Pressable>
             </View>
 
-            {(mode === 'date' || mode === 'date-range') && (
+            {(internalView === 'date' || internalView === 'date-range') && (
               <>
                 <View style={styles.navigation}>
                   <Pressable onPress={() => { const d = new Date(currentViewDate); d.setMonth(d.getMonth() - 1); setCurrentViewDate(d); }} accessibilityLabel={t('date_prev_month')}>
                     <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
                   </Pressable>
-                  <Text style={styles.navText}>{t(`date_${MONTHS_KEYS[currentViewDate.getMonth()]}`)} {currentViewDate.getFullYear()}</Text>
+                  <Pressable onPress={() => setInternalView('year')} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={styles.navText}>{t(`date_${MONTHS_KEYS[currentViewDate.getMonth()]}`) || MONTHS_KEYS[currentViewDate.getMonth()].toUpperCase()} {currentViewDate.getFullYear()}</Text>
+                    <Ionicons name="caret-down-outline" size={14} color={Colors.light.text} />
+                  </Pressable>
                   <Pressable onPress={() => { const d = new Date(currentViewDate); d.setMonth(d.getMonth() + 1); setCurrentViewDate(d); }} accessibilityLabel={t('date_next_month')}>
                     <Ionicons name="chevron-forward" size={24} color={Colors.light.text} />
                   </Pressable>
@@ -230,7 +247,7 @@ export default function SHGDatePicker({
                 <View style={styles.grid}>{renderDays()}</View>
                 
                 <View style={styles.actionRow}>
-                  {mode === 'date-range' ? (
+                  {internalView === 'date-range' ? (
                     <Pressable style={[styles.confirmBtn, (!rangeStart || !rangeEnd) && { opacity: 0.5 }]} disabled={!rangeStart || !rangeEnd} onPress={handleConfirmRange}>
                       <Text style={styles.confirmBtnText}>{t('date_done') || 'Done'}</Text>
                     </Pressable>
@@ -250,24 +267,25 @@ export default function SHGDatePicker({
               </>
             )}
 
-            {(mode === 'month' || mode === 'month-year') && (
+            {(internalView === 'month' || internalView === 'month-year') && (
               <>
-                {mode === 'month-year' && (
-                  <View style={styles.navigation}>
-                    <Pressable onPress={() => { const d = new Date(currentViewDate); d.setFullYear(d.getFullYear() - 1); setCurrentViewDate(d); }}>
-                      <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
-                    </Pressable>
+                <View style={styles.navigation}>
+                  <Pressable onPress={() => { const d = new Date(currentViewDate); d.setFullYear(d.getFullYear() - 1); setCurrentViewDate(d); }}>
+                    <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
+                  </Pressable>
+                  <Pressable onPress={() => setInternalView('year')} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                     <Text style={styles.navText}>{currentViewDate.getFullYear()}</Text>
-                    <Pressable onPress={() => { const d = new Date(currentViewDate); d.setFullYear(d.getFullYear() + 1); setCurrentViewDate(d); }}>
-                      <Ionicons name="chevron-forward" size={24} color={Colors.light.text} />
-                    </Pressable>
-                  </View>
-                )}
+                    <Ionicons name="caret-down-outline" size={14} color={Colors.light.text} />
+                  </Pressable>
+                  <Pressable onPress={() => { const d = new Date(currentViewDate); d.setFullYear(d.getFullYear() + 1); setCurrentViewDate(d); }}>
+                    <Ionicons name="chevron-forward" size={24} color={Colors.light.text} />
+                  </Pressable>
+                </View>
                 <View style={styles.grid}>{renderMonths()}</View>
               </>
             )}
 
-            {mode === 'year' && (
+            {internalView === 'year' && (
               <ScrollView style={{ maxHeight: 300 }}><View style={styles.grid}>{renderYears()}</View></ScrollView>
             )}
           </View>

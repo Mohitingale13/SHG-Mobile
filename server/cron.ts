@@ -37,9 +37,10 @@ async function calculateLateFees() {
   
   for (const group of groups) {
     const settings = await storage.getGroupSettings(group.groupId);
+    if (!settings || !settings.setupProgress?.settings) continue;
     const payments = await storage.getPaymentsByGroupId(group.groupId);
     const pendingPayments = payments.filter(p => 
-      (p.status === "pending" || p.status === "pending_verification") && p.dueDate
+      (p.status === "payment_not_received" || p.status === "pending" || p.status === "pending_verification") && p.dueDate
     );
     
     for (const payment of pendingPayments) {
@@ -53,8 +54,12 @@ async function calculateLateFees() {
         let newLateFee = 0;
         if (settings.lateFeeType === "fixed") {
           newLateFee = settings.lateFeeAmount;
-        } else if (settings.lateFeeType === "percentage") {
-          newLateFee = Math.round((payment.expectedAmount * settings.lateFeeAmount) / 100);
+        } else if (settings.lateFeeType === "daily") {
+          const originalDueDate = new Date(payment.dueDate);
+          const daysOverdue = Math.floor((now.getTime() - originalDueDate.getTime()) / (1000 * 60 * 60 * 24));
+          newLateFee = daysOverdue > 0 ? daysOverdue * settings.lateFeeAmount : 0;
+        } else if (settings.lateFeeType === "none") {
+          newLateFee = 0;
         }
         
         if (payment.lateFee !== newLateFee) {

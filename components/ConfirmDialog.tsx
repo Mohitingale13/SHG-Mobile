@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { View, Text, StyleSheet, Modal, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Modal, Pressable, Platform, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 
@@ -10,13 +10,14 @@ interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   destructive?: boolean;
+  isLoading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 export default function ConfirmDialog({
   visible, title, message, confirmText = "Confirm", cancelText = "Cancel",
-  destructive = false, onConfirm, onCancel,
+  destructive = false, isLoading = false, onConfirm, onCancel,
 }: ConfirmDialogProps) {
   return (
     <Modal
@@ -37,16 +38,21 @@ export default function ConfirmDialog({
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
           <View style={styles.btnRow}>
-            <Pressable style={styles.cancelBtn} onPress={onCancel}>
+            <Pressable style={styles.cancelBtn} onPress={onCancel} disabled={isLoading}>
               <Text style={styles.cancelText}>{cancelText}</Text>
             </Pressable>
             <Pressable
-              style={[styles.confirmBtn, destructive && styles.destructiveBtn]}
+              style={[styles.confirmBtn, destructive && styles.destructiveBtn, isLoading && { opacity: 0.6 }]}
               onPress={onConfirm}
+              disabled={isLoading}
             >
-              <Text style={[styles.confirmText, destructive && styles.destructiveText]}>
-                {confirmText}
-              </Text>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={[styles.confirmText, destructive && styles.destructiveText]}>
+                  {confirmText}
+                </Text>
+              )}
             </Pressable>
           </View>
         </Pressable>
