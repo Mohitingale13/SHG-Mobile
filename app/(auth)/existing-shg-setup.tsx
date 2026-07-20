@@ -20,7 +20,7 @@ export default function ExistingSHGSetupScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
-    if (!group?.id) return;
+    if (!group?.groupId) return;
     
     const savingsNum = parseInt(totalSavings || "0");
     const balanceNum = parseInt(currentBalance || "0");
@@ -32,7 +32,7 @@ export default function ExistingSHGSetupScreen() {
 
     setLoading(true);
     try {
-      await apiPost(`/api/groups/${group.id}/opening-balances`, {
+      await apiPost(`/api/groups/${group.groupId}/opening-balances`, {
         openingDate,
         totalSavings: savingsNum,
         currentBalance: balanceNum,

@@ -56,11 +56,11 @@ export function requirePresidentOrTreasurer(req: AuthRequest, res: Response, nex
 }
 
 export function requireSameGroup(
-  groupId: string,
   req: AuthRequest,
   res: Response,
   next: NextFunction,
 ) {
+  const { groupId } = req.params;
   if (req.currentUser?.groupId !== groupId) {
     return res.status(403).json({ error: "Access denied: different group" });
   }
@@ -480,6 +480,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           groupId: groupId,
           status: "active",
           preferredLanguage: group?.preferredLanguage || "en",
+        });
+
+        let identity = await storage.getIdentityByPhone(phone.trim());
+        if (!identity) {
+          identity = await storage.createIdentity({
+            phone: phone.trim(),
+            password: "password123",
+            name: name.trim(),
+            village: address || group?.village || "",
+            preferredLanguage: group?.preferredLanguage || "en",
+          });
+        }
+        await storage.createMembership({
+          identityId: identity.id,
+          groupId: groupId,
+          userId: user.id,
+          role: "member",
+          status: "active",
         });
 
         const { password: _p, ...safeUser } = user;

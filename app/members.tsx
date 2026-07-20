@@ -150,7 +150,7 @@ export default function MembersScreen() {
     }
     setIsAddingMember(true);
     try {
-      await apiPost(`/api/groups/${group?.id}/members`, {
+      await apiPost(`/api/groups/${group?.groupId}/members`, {
         name: newMemberName,
         phone: newMemberPhone,
       });
