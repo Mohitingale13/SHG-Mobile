@@ -432,7 +432,7 @@ export default function DashboardScreen() {
           styles.content,
           {
             paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12,
-            paddingBottom: insets.bottom + 20,
+            paddingBottom: insets.bottom + 100,
           },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.light.primary} />}

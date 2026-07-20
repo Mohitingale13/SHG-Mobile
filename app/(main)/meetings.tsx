@@ -76,7 +76,7 @@ export default function MeetingsScreen() {
         data={sortedMeetings}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <MeetingItem meeting={item} />}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="calendar-outline" size={48} color={Colors.light.textMuted} />

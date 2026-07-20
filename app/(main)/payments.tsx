@@ -535,7 +535,7 @@ export default function PaymentsScreen() {
             onDelete={setDeletePaymentId}
           />
         )}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.light.primary} />}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -610,6 +610,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.light.card, borderRadius: 14,
     borderWidth: 1, borderColor: Colors.light.border, paddingHorizontal: 14,
+    minWidth: 0,
   },
   rupeeSign: {
     fontFamily: "Poppins_600SemiBold", fontSize: 16,
@@ -618,6 +619,8 @@ const styles = StyleSheet.create({
   amountInput: {
     flex: 1, fontFamily: "Poppins_500Medium", fontSize: 16,
     color: Colors.light.text, paddingVertical: 14,
+    minWidth: 0,
+    ...Platform.select({ web: { outlineStyle: "none" } as any, default: {} }),
   },
   recordForm: {
     marginHorizontal: 20, marginBottom: 12, padding: 16, gap: 12,

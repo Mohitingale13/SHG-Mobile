@@ -156,7 +156,7 @@ export default function MoreScreen() {
       style={styles.container}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12, paddingBottom: insets.bottom + 20 },
+        { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12, paddingBottom: insets.bottom + 100 },
       ]}
     >
       <Text style={styles.title}>{t("more")}</Text>
