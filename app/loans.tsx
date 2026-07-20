@@ -56,10 +56,7 @@ function LoanItem({ loan }: { loan: Loan }) {
           <Text style={styles.detailLabel}>{t("loanAmount")}</Text>
           <Text style={styles.detailValue}>Rs. {loan.amount.toLocaleString("en-IN")}</Text>
         </View>
-        <View style={styles.loanDetail}>
-          <Text style={styles.detailLabel}>{t("interest")}</Text>
-          <Text style={styles.detailValue}>{loan.interest}%</Text>
-        </View>
+
         <View style={styles.loanDetail}>
           <Text style={styles.detailLabel}>{t("monthly_installment")}</Text>
           <Text style={styles.detailValue}>Rs. {totalEmi.toLocaleString("en-IN")}</Text>

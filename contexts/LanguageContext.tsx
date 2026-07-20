@@ -116,6 +116,7 @@ export const translations: Record<string, any> = {
   "pdf_remarks": { "en": "Remarks", "mr": "शेरा" },
 
   "pdf_report_id": { "en": "Report ID", "mr": "अहवाल क्र." },
+  "pdf_historical_data_disclaimer": { "en": "Note: Opening Balances in these reports inherently include all historical member contributions and loan repayments up to the date of SHG digitization on this platform.", "mr": "टीप: या अहवालातील सुरुवातीच्या शिलकीत बचत गटाच्या डिजिटायझेशनच्या तारखेपर्यंतचे सर्व ऐतिहासिक सदस्य योगदान आणि कर्जाची परतफेड समाविष्ट आहे." },
   "pdf_verification": { "en": "Verification", "mr": "पडताळणी" },
   "pdf_executive_summary": { "en": "Executive Summary", "mr": "कार्यकारी सारांश" },
   "pdf_recovery_pct": { "en": "Recovery %", "mr": "वसुली %" },

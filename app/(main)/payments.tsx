@@ -496,7 +496,7 @@ export default function PaymentsScreen() {
           <View style={styles.recordAmounts}>
             <View style={styles.inputContainer}>
               <Text style={styles.rupeeSign}>Rs.</Text>
-              <TextInput style={styles.amountInput} placeholder={t("amount")} placeholderTextColor={Colors.light.textMuted} value={amount} onChangeText={setAmount} keyboardType="number-pad" autoFocus />
+              <TextInput style={styles.amountInput} placeholder={t("amount")} placeholderTextColor={Colors.light.textMuted} value={amount} onChangeText={setAmount} keyboardType="number-pad" />
             </View>
             <View style={styles.inputContainer}>
               <Text style={styles.rupeeSign}>Rs.</Text>

@@ -1180,6 +1180,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderLeftWidth: 4,
     gap: 2,
+    justifyContent: "space-between",
   },
   statCardHeader: {
     flexDirection: "row",
