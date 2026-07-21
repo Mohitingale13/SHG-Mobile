@@ -40,22 +40,22 @@ export default function ShgSettingsScreen() {
     const fee = parseInt(lateFee);
     const grace = parseInt(gracePeriod);
 
-    if (!amount || amount <= 0) {
+    if (isNaN(amount) || amount <= 0) {
       const msg = "Please enter a valid monthly contribution amount";
       Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
-    if (!dDay || dDay < 1 || dDay > 28) {
+    if (isNaN(dDay) || dDay < 1 || dDay > 28) {
       const msg = "Due day must be between 1 and 28";
       Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
-    if (!fee || fee < 0) {
+    if (isNaN(fee) || fee < 0) {
       const msg = "Late fee must be 0 or greater";
       Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
     }
-    if (!grace || grace < 0) {
+    if (isNaN(grace) || grace < 0) {
       const msg = "Grace period must be 0 or greater";
       Platform.OS === "web" ? window.alert(msg) : Alert.alert(t("error"), msg);
       return;
