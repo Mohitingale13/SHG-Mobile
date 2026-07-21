@@ -12,6 +12,7 @@ import { useData, Payment, PaymentStatus } from "@/contexts/DataContext";
 import Colors from "@/constants/colors";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import FilterPicker, { FilterOption } from "@/components/FilterPicker";
+import { useFocusEffect } from "expo-router";
 
 function paymentStatusColor(status: PaymentStatus): string {
   switch (status) {
@@ -214,6 +215,13 @@ export default function PaymentsScreen() {
   const { user, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
   const { payments, groupMembers, recordPayment, verifyPayment, reopenPayment, deletePayment, refreshData } = useData();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (refreshData) refreshData();
+    }, [])
+  );
+
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 

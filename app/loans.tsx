@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -77,7 +77,14 @@ function LoanItem({ loan }: { loan: Loan }) {
 export default function LoansScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useLanguage();
-  const { loans } = useData();
+  const { loans, refreshData } = useData();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (refreshData) refreshData();
+    }, [])
+  );
+
   const { isPresident, isTreasurer } = useAuth();
   
   // Filters State

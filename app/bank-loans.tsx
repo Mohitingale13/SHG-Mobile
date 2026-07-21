@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { useState, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -153,7 +153,14 @@ export default function BankLoansScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const { groupBankLoans, bankLoanAllocations, groupMembers } = useData();
+  const { groupBankLoans, bankLoanAllocations, groupMembers, refreshData } = useData();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (refreshData) refreshData();
+    }, [])
+  );
+
 
   const isPresident = user?.role === "president";
   const isTreasurer = user?.role === "treasurer";

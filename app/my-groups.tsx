@@ -16,7 +16,7 @@ export default function MyGroupsScreen() {
   const insets = useSafeAreaInsets();
   const { user, myMemberships, loadMyMemberships, switchSHG } = useAuth();
   const { t } = useLanguage();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!myMemberships);
   const [switching, setSwitching] = useState<string | null>(null);
   const [passwordModal, setPasswordModal] = useState<{ visible: boolean; membershipId: string | null }>({ visible: false, membershipId: null });
   const [password, setPassword] = useState("");

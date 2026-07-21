@@ -63,22 +63,22 @@ export default function MeetingDetailScreen() {
   };
 
   const handleCancelMeeting = async () => {
-    setDialog(null);
     setActionLoading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await cancelMeeting(meeting.id);
+      setDialog(null);
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleDeleteMeeting = async () => {
-    setDialog(null);
     setActionLoading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await deleteMeeting(meeting.id);
+      setDialog(null);
       router.back();
     } finally {
       setActionLoading(false);
@@ -294,6 +294,7 @@ export default function MeetingDetailScreen() {
         confirmText={t("auto.yes_cancel")}
         cancelText={t("auto.keep")}
         destructive={false}
+        isLoading={actionLoading}
         onConfirm={handleCancelMeeting}
         onCancel={() => setDialog(null)}
       />
@@ -305,6 +306,7 @@ export default function MeetingDetailScreen() {
         confirmText={t("auto.delete")}
         cancelText={t("auto.keep")}
         destructive
+        isLoading={actionLoading}
         onConfirm={handleDeleteMeeting}
         onCancel={() => setDialog(null)}
       />

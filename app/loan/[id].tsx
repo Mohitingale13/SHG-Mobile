@@ -61,6 +61,7 @@ export default function LoanDetailScreen() {
   const [rejectReason, setRejectReason] = useState("");
   const [deleteRepaymentId, setDeleteRepaymentId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [resolutionError, setResolutionError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const repaymentSubmittingRef = useRef(false);
@@ -201,12 +202,14 @@ export default function LoanDetailScreen() {
 
   const handleDeleteLoan = async () => {
     try {
+      setIsDeleting(true);
       setDialog(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await deleteLoan(loan.id);
       router.back();
     } catch (e: any) {
       Alert.alert(t("error"), e.message || t("error"));
+      setIsDeleting(false);
     }
   };
 
@@ -787,9 +790,19 @@ export default function LoanDetailScreen() {
                   <Pressable style={[styles.deleteLoanBtn, { flex: 1, backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, marginTop: 0 }]} onPress={() => setConfirmDelete(false)}>
                     <Text style={[styles.deleteLoanBtnText, { color: Colors.light.text }]}>{t("auto.keep")}</Text>
                   </Pressable>
-                  <Pressable style={[styles.deleteLoanBtn, { flex: 1, backgroundColor: Colors.light.danger, marginTop: 0 }]} onPress={handleDeleteLoan}>
-                    <Ionicons name="warning-outline" size={20} color="#fff" />
-                    <Text style={[styles.deleteLoanBtnText, { color: '#fff' }]}>{t("auto.delete")}</Text>
+                  <Pressable 
+                    style={[styles.deleteLoanBtn, { flex: 1, backgroundColor: isDeleting ? Colors.light.border : Colors.light.danger, marginTop: 0 }]} 
+                    onPress={handleDeleteLoan}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="warning-outline" size={20} color="#fff" />
+                        <Text style={[styles.deleteLoanBtnText, { color: '#fff' }]}>{t("auto.delete")}</Text>
+                      </>
+                    )}
                   </Pressable>
                 </View>
               </View>
@@ -822,7 +835,7 @@ export default function LoanDetailScreen() {
             </View>
 
             {group?.qrCode ? (
-              <Image source={{ uri: group.qrCode }} style={{ width: 200, height: 200, marginBottom: 16 }} />
+              <Image source={{ uri: group.qrCode }} style={{ width: 200, height: 200, marginBottom: 16 }} resizeMode="contain" />
             ) : (
               <Text style={{ fontFamily: "Poppins_400Regular", color: Colors.light.textMuted, marginBottom: 16 }}>{t("noqrcode")}</Text>
             )}

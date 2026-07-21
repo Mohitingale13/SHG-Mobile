@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform, RefreshControl, Animated, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
@@ -34,6 +34,13 @@ export default function DashboardScreen() {
   const { t, language } = useLanguage();
   const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations, updateGroupSettings } = useData();
   const [refreshing, setRefreshing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [])
+  );
+
 
   const [dismissedSavings, setDismissedSavings] = useState(false);
   const [dismissedLoan, setDismissedLoan] = useState(false);

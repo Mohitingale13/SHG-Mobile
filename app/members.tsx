@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAuth, User } from "@/contexts/AuthContext";
 import { useData } from "@/contexts/DataContext";
@@ -130,8 +130,15 @@ export default function MembersScreen() {
   const insets = useSafeAreaInsets();
   const { isPresident, group, refreshSession } = useAuth();
   const { t } = useLanguage();
-  const { groupMembers, updateMemberStatus, assignTreasurer } = useData();
+  const { groupMembers, updateMemberStatus, assignTreasurer, refreshData } = useData();
   const [showModal, setShowModal] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [])
+  );
+
   const [assignLoading, setAssignLoading] = useState(false);
   const [selectedMember, setSelectedMember] = useState<User | null>(null);
   

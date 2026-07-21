@@ -256,6 +256,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
+  // Pre-fetch memberships in the background when user logs in or session restores
+  useEffect(() => {
+    if (user?.id) {
+      loadMyMemberships();
+    }
+  }, [user?.id, loadMyMemberships]);
+
   const getPendingCredentials = useCallback(() => pendingCredentials.current, []);
 
   // ── Verify password ────────────────────────────────────────────────────────

@@ -828,7 +828,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (req.currentUser!.role === "treasurer" && ["scheduledDate", "agenda", "status"].includes(key)) {
              return res.status(403).json({ error: "Treasurer cannot edit meeting details" });
           }
-          updates[key] = req.body[key];
+          if (key === "scheduledDate") {
+            updates[key] = new Date(req.body[key]);
+          } else {
+            updates[key] = req.body[key];
+          }
         }
       }
       const updated = await storage.updateMeeting(meetingId, updates);
