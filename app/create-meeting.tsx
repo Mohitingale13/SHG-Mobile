@@ -7,10 +7,10 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import SHGDatePicker from '@/components/SHGDatePicker';
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 
 function WebDateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -39,10 +39,15 @@ export default function CreateMeetingScreen() {
   const insets = useSafeAreaInsets();
   const { t, language } = useLanguage();
   const { createMeeting } = useData();
+  const { isPresident, isTreasurer } = useAuth();
   const [scheduledDate, setScheduledDate] = useState("");
   const [agenda, setAgenda] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+
+  if (!isPresident && !isTreasurer) {
+    return null;
+  }
 
   const handleCreate = async () => {
     if (!scheduledDate.trim() || !agenda.trim()) {

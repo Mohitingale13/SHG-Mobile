@@ -50,6 +50,7 @@ export function requirePresident(req: AuthRequest, res: Response, next: NextFunc
 
 export function requirePresidentOrTreasurer(req: AuthRequest, res: Response, next: NextFunction) {
   if (req.currentUser?.role !== "president" && req.currentUser?.role !== "treasurer") {
+    console.error("403 President or Treasurer access required. User role:", req.currentUser?.role);
     return res.status(403).json({ error: "President or Treasurer access required" });
   }
   next();
@@ -774,8 +775,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { scheduledDate, agenda, groupId } = req.body;
-      if (req.currentUser!.groupId !== groupId)
+      if (req.currentUser!.groupId !== groupId) {
+        console.error("403 Access denied: currentUser.groupId", req.currentUser!.groupId, "!= body.groupId", groupId);
         return res.status(403).json({ error: "Access denied" });
+      }
       const meeting = await storage.createMeeting({
         groupId,
         scheduledDate: new Date(scheduledDate),
@@ -862,12 +865,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/groups/:groupId/payments",
     requireAuth as any,
-    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
       const { memberId, amount, lateFee = 0, month, mode } = req.body;
+      
+      // If user is a member, they can only submit their own payments
+      if (req.currentUser!.role === "member" && req.currentUser!.id !== memberId) {
+        return res.status(403).json({ error: "Members can only submit their own payments" });
+      }
+      
       if (!amount || amount <= 0)
         return res.status(400).json({ error: "Valid amount required" });
       if (!Number.isInteger(Number(amount)) || !Number.isInteger(Number(lateFee)) || Number(lateFee) < 0) {
@@ -887,6 +895,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!member || member.groupId !== groupId || member.status !== "active") {
         return res.status(400).json({ error: "Selected member is not active in this group" });
       }
+
+      let status = "confirmed";
+      let verifiedBy = user.id;
+      let verifiedAt = now(req);
+
+      if (user.role === "member") {
+        status = paymentMode === "online" ? "pending_verification" : "pending";
+        verifiedBy = null as any;
+        verifiedAt = null as any;
+      }
+
       const payment = await storage.createPayment({
         groupId,
         memberId: member.id,
@@ -898,9 +917,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueDate: null,
         date: now(req),
         mode: paymentMode,
-        status: "confirmed",
-        verifiedBy: user.id,
-        verifiedAt: now(req),
+        status: status as any,
+        verifiedBy,
+        verifiedAt,
       });
       return res.status(201).json(payment);
     },

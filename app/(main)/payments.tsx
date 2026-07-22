@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, Platform,
-  TextInput, Alert, RefreshControl, Modal, ScrollView,
+  TextInput, Alert, RefreshControl, Modal, ScrollView, Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -212,7 +212,7 @@ function PaymentItem({
 
 export default function PaymentsScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isPresident, isTreasurer } = useAuth();
+  const { user, group, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
   const { payments, groupMembers, recordPayment, verifyPayment, reopenPayment, deletePayment, refreshData } = useData();
 
@@ -368,9 +368,10 @@ export default function PaymentsScreen() {
   const pendingOnlineCount = payments.filter((p) => p.status === "pending_verification" && p.mode === "online").length;
   const canVerifyCash = isPresident || isTreasurer;
   const canVerifyOnline = isTreasurer || isPresident;
-  const canDeclare = isPresident || isTreasurer;
+  const canDeclare = true; // All members can declare payments
   const activeMembers = groupMembers.filter((member) => member.status === "active");
-  const memberOptions: FilterOption[] = activeMembers.map((member) => ({ value: member.id, label: member.name }));
+  const allowedMembers = (isPresident || isTreasurer) ? activeMembers : activeMembers.filter(m => m.id === user?.id);
+  const memberOptions: FilterOption[] = allowedMembers.map((member) => ({ value: member.id, label: member.name }));
   const monthOptions: FilterOption[] = [
     { value: "01", label: "January" }, { value: "02", label: "February" },
     { value: "03", label: "March" }, { value: "04", label: "April" },
@@ -519,6 +520,18 @@ export default function PaymentsScreen() {
               <Ionicons name="phone-portrait-outline" size={20} color="#2563EB" /><Text style={[styles.modeBtnText, { color: "#2563EB" }]}>{t("online")}</Text>
             </Pressable>
           </View>
+
+          {paymentMode === "online" && group?.qrCode && (
+            <View style={styles.qrBar}>
+              <View style={styles.qrBarHeader}>
+                <Ionicons name="qr-code" size={16} color={Colors.light.text} />
+                <Text style={styles.qrBarTitle}>Group QR Code</Text>
+              </View>
+              <Image source={{ uri: group.qrCode }} style={styles.qrPreview} />
+              <Text style={styles.qrTapHint}>Pay to the SHG account</Text>
+            </View>
+          )}
+
           <View style={styles.recordActions}>
             <Pressable onPress={resetForm} style={styles.cancelModeBtn}><Text style={styles.cancelModeText}>{t("cancel")}</Text></Pressable>
             <Pressable style={styles.recordSubmitBtn} onPress={handleRecordPayment}><Ionicons name="checkmark" size={18} color="#fff" /><Text style={styles.recordSubmitText}>Save payment</Text></Pressable>
