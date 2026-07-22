@@ -378,6 +378,13 @@ export interface IStorage {
   getMembershipsByGroupId(groupId: string): Promise<IdentityMembership[]>;
   createMembership(data: Omit<IdentityMembership, "id" | "createdAt">): Promise<IdentityMembership>;
   updateMembership(id: string, data: Partial<IdentityMembership>): Promise<IdentityMembership | undefined>;
+
+  // Loan Payment Claims
+  createLoanClaim(data: Omit<schema.LoanPaymentClaim, "id" | "createdAt">): Promise<schema.LoanPaymentClaim>;
+  getClaimsByLoanId(loanId: string): Promise<schema.LoanPaymentClaim[]>;
+  getClaimsByGroupId(groupId: string): Promise<schema.LoanPaymentClaim[]>;
+  getClaimById(id: string): Promise<schema.LoanPaymentClaim | undefined>;
+  updateLoanClaim(id: string, data: Partial<schema.LoanPaymentClaim>): Promise<schema.LoanPaymentClaim | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -1373,6 +1380,44 @@ export class DatabaseStorage implements IStorage {
   async updateMembership(id: string, data: Partial<IdentityMembership>): Promise<IdentityMembership | undefined> {
     await this.db.update(schema.memberships).set(data).where(eq(schema.memberships.id, id));
     return this.getMembershipById(id);
+  }
+
+  // ─── Loan Payment Claims ────────────────────────────────────────────────────
+  async createLoanClaim(data: Omit<schema.LoanPaymentClaim, "id" | "createdAt">): Promise<schema.LoanPaymentClaim> {
+    const id = randomUUID();
+    const now = new Date();
+    const row = { ...data, id, createdAt: now };
+    await this.db.insert(schema.loanPaymentClaims).values(row);
+    return { ...row, createdAt: now.toISOString() } as any;
+  }
+
+  async getClaimsByLoanId(loanId: string): Promise<schema.LoanPaymentClaim[]> {
+    return this.db
+      .select()
+      .from(schema.loanPaymentClaims)
+      .where(eq(schema.loanPaymentClaims.loanId, loanId))
+      .orderBy(desc(schema.loanPaymentClaims.createdAt)) as any;
+  }
+
+  async getClaimsByGroupId(groupId: string): Promise<schema.LoanPaymentClaim[]> {
+    return this.db
+      .select()
+      .from(schema.loanPaymentClaims)
+      .where(eq(schema.loanPaymentClaims.groupId, groupId))
+      .orderBy(desc(schema.loanPaymentClaims.createdAt)) as any;
+  }
+
+  async getClaimById(id: string): Promise<schema.LoanPaymentClaim | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(schema.loanPaymentClaims)
+      .where(eq(schema.loanPaymentClaims.id, id));
+    return row as any;
+  }
+
+  async updateLoanClaim(id: string, data: Partial<schema.LoanPaymentClaim>): Promise<schema.LoanPaymentClaim | undefined> {
+    await this.db.update(schema.loanPaymentClaims).set(data).where(eq(schema.loanPaymentClaims.id, id));
+    return this.getClaimById(id);
   }
 
 }

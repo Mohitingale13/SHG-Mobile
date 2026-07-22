@@ -42,7 +42,7 @@ export default function MemberDetailScreen() {
   const insets = useSafeAreaInsets();
   const { user, group, isPresident } = useAuth();
   const { t, language } = useLanguage();
-  const { payments, loans, loanRepayments, loanLedgers, meetings, groupMembers, groupBankLoans, bankLoanAllocations, updateMember } = useData();
+  const { payments, loans, loanRepayments, loanLedgers, meetings, groupMembers, groupBankLoans, bankLoanAllocations, updateMember, getBankLoanAllocationLedger } = useData();
   const [generating, setGenerating] = useState(false);
 
   const member = groupMembers.find((m) => m.id === id);
@@ -121,6 +121,19 @@ export default function MemberDetailScreen() {
     if (!group) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setGenerating(true);
+
+    let bLedgers: any[] = [];
+    const myAllocs = bankLoanAllocations ? bankLoanAllocations.filter((a) => a.memberId === member.id) : [];
+    if (myAllocs.length > 0) {
+      try {
+        const fetchPromises = myAllocs.map((a) => getBankLoanAllocationLedger(a.id));
+        const res = await Promise.all(fetchPromises);
+        bLedgers = res.flat();
+      } catch (err) {
+        console.error("Failed to load bank ledgers", err);
+      }
+    }
+
     await generateMemberPassbook({
       group,
       groupMembers,
@@ -129,6 +142,8 @@ export default function MemberDetailScreen() {
       loans,
       loanRepayments,
       loanLedger: loanLedgers,
+      bankAllocations: myAllocs,
+      bankLoanLedger: bLedgers,
       t,
       user,
     });

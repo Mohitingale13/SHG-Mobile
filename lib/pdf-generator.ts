@@ -617,6 +617,7 @@ function getStandardCss() {
     
     /* Tables (Passbook Style) */
     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 9px; }
+    tr { page-break-inside: avoid; }
     th { background: #0f172a; color: #fff; text-align: left; padding: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #0f172a; }
     td { padding: 6px 8px; border: 1px solid #cbd5e1; vertical-align: middle; }
     tr:nth-child(even) td { background: #f8fafc; }

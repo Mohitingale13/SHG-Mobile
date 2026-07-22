@@ -52,7 +52,9 @@ export default function CreateLoanScreen() {
   const [showMemberPicker, setShowMemberPicker] = useState(false);
 
   // ── Form state ─────────────────────────────────────────────────────────────
-  const [selectedMemberId, setSelectedMemberId] = useState<string>("");
+  const [selectedMemberId, setSelectedMemberId] = useState<string>(
+    (!isPresident && !isTreasurer) && user ? user.id : ""
+  );
   const [amount, setAmount] = useState("");
   const [duration, setDuration] = useState("");
   const [startDate, setStartDate] = useState(todayISO());
@@ -137,19 +139,22 @@ export default function CreateLoanScreen() {
   };
 
   const handlePasswordSubmit = async () => {
+    if (loading) return;
     if (!password.trim()) {
       setPasswordError(t("auto.please_enter_your_password"));
       return;
     }
+    
+    setLoading(true);
     const isValid = await verifyPassword(password);
     if (!isValid) {
+      setLoading(false);
       setPasswordError(t("auto.incorrect_password"));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    setShowPasswordModal(false);
-    setLoading(true);
-
+    
+    // Valid password -> proceed to create
 
     const payload: any = {
       amount: numAmount,
@@ -170,11 +175,15 @@ export default function CreateLoanScreen() {
     }
 
     const error = await requestLoan(payload);
+    
     setLoading(false);
+    
     if (error) {
       Alert.alert(t("error"), t(error));
       return;
     }
+    
+    setShowPasswordModal(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   };
@@ -228,28 +237,32 @@ export default function CreateLoanScreen() {
         <View style={styles.form}>
 
           {/* ─── Member Selector ──────────────────────────────────────────── */}
-          <Text style={styles.label}>
-            {language === "en" ? "Select Member *" : "सदस्य निवडा *"}
-          </Text>
-          <View style={[styles.pickerWrapper, !!memberError && styles.inputError]}>
-            <Ionicons name="person" size={18} color={Colors.light.textSecondary} style={{ marginLeft: 14 }} />
-            <Picker
-              selectedValue={selectedMemberId}
-              onValueChange={(val) => { setSelectedMemberId(val); setMemberError(""); }}
-              style={styles.picker}
-              dropdownIconColor={Colors.light.textSecondary}
-            >
-              <Picker.Item
-                label={language === "en" ? "— Choose a member —" : "— सदस्य निवडा —"}
-                value=""
-                color={Colors.light.textMuted}
-              />
-              {activeMembers.map((m) => (
-                <Picker.Item key={m.id} label={m.name} value={m.id} color={Colors.light.text} />
-              ))}
-            </Picker>
-          </View>
-          {!!memberError && <Text style={styles.errorText}>{memberError}</Text>}
+          {(isPresident || isTreasurer) && (
+            <>
+              <Text style={styles.label}>
+                {language === "en" ? "Select Member *" : "सदस्य निवडा *"}
+              </Text>
+              <View style={[styles.pickerWrapper, !!memberError && styles.inputError]}>
+                <Ionicons name="person" size={18} color={Colors.light.textSecondary} style={{ marginLeft: 14 }} />
+                <Picker
+                  selectedValue={selectedMemberId}
+                  onValueChange={(val) => { setSelectedMemberId(val); setMemberError(""); }}
+                  style={styles.picker}
+                  dropdownIconColor={Colors.light.textSecondary}
+                >
+                  <Picker.Item
+                    label={language === "en" ? "— Choose a member —" : "— सदस्य निवडा —"}
+                    value=""
+                    color={Colors.light.textMuted}
+                  />
+                  {activeMembers.map((m) => (
+                    <Picker.Item key={m.id} label={m.name} value={m.id} color={Colors.light.text} />
+                  ))}
+                </Picker>
+              </View>
+              {!!memberError && <Text style={styles.errorText}>{memberError}</Text>}
+            </>
+          )}
 
           {/* ─── Loan Amount ──────────────────────────────────────────────── */}
           <Text style={[styles.label, { marginTop: 12 }]}>{t("loanAmount")} (Rs.) *</Text>
@@ -503,11 +516,18 @@ export default function CreateLoanScreen() {
                   <Text style={styles.modalCancelText}>{t("cancel")}</Text>
                 </Pressable>
                 <Pressable
-                  style={({ pressed }) => [styles.modalConfirmBtn, { opacity: pressed ? 0.85 : 1 }]}
+                  style={({ pressed }) => [styles.modalConfirmBtn, { opacity: pressed || loading ? 0.85 : 1 }]}
                   onPress={handlePasswordSubmit}
+                  disabled={loading}
                 >
-                  <Ionicons name="checkmark" size={20} color="#fff" />
-                  <Text style={styles.modalConfirmText}>{t("confirm")}</Text>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={20} color="#fff" />
+                      <Text style={styles.modalConfirmText}>{t("confirm")}</Text>
+                    </>
+                  )}
                 </Pressable>
               </View>
             </Pressable>

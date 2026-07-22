@@ -1183,11 +1183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-
-      // Role guard: only president or treasurer may create loans
       const caller = req.currentUser!;
-      if (caller.role !== "president" && caller.role !== "treasurer")
-        return res.status(403).json({ error: "Only the President or Treasurer can create loans" });
+
 
       const { amount, duration, memberId, memberName, startDate, isExisting, isCompleted, outstandingPrincipal, loanDate } = req.body;
       if (!amount || !duration)
@@ -1692,8 +1689,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // ─── Loan Payment Claims ──────────────────────────────────────────────────────
+  // POST /api/loans/:loanId/claims  — Member submits a payment claim
+  app.post(
+    "/api/loans/:loanId/claims",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      const { loanId } = req.params;
+      const { amount, mode, remarks } = req.body;
+
+      const loan = await storage.getLoanById(loanId);
+      if (!loan || loan.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Loan not found" });
+
+      // Members can only claim for their own loan
+      if (req.currentUser!.role === "member" && loan.memberId !== req.currentUser!.id)
+        return res.status(403).json({ error: "You can only submit claims for your own loans." });
+
+      if (loan.status !== "approved")
+        return res.status(400).json({ error: "Claims can only be submitted for active loans." });
+
+      const numAmount = Number(amount);
+      if (!numAmount || numAmount <= 0)
+        return res.status(400).json({ error: "Valid amount required." });
+
+      const claim = await storage.createLoanClaim({
+        groupId: req.currentUser!.groupId,
+        loanId,
+        memberId: req.currentUser!.id,
+        memberName: req.currentUser!.name,
+        amount: numAmount,
+        mode: mode || "cash",
+        status: "pending",
+        remarks: remarks?.trim() || null,
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+      });
+      return res.status(201).json(claim);
+    },
+  );
+
+  // GET /api/loans/:loanId/claims  — Get claims for a specific loan
+  app.get(
+    "/api/loans/:loanId/claims",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      const { loanId } = req.params;
+      const loan = await storage.getLoanById(loanId);
+      if (!loan || loan.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Loan not found" });
+      // Members can only see claims for their own loan
+      if (req.currentUser!.role === "member" && loan.memberId !== req.currentUser!.id)
+        return res.status(403).json({ error: "Access denied." });
+      const claims = await storage.getClaimsByLoanId(loanId);
+      return res.json(claims);
+    },
+  );
+
+  // GET /api/groups/:groupId/loan-claims  — President/Treasurer sees all pending claims
+  app.get(
+    "/api/groups/:groupId/loan-claims",
+    requireAuth as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { groupId } = req.params;
+      if (req.currentUser!.groupId !== groupId)
+        return res.status(403).json({ error: "Access denied" });
+      const claims = await storage.getClaimsByGroupId(groupId);
+      return res.json(claims);
+    },
+  );
+
+  // POST /api/loan-claims/:id/approve  — President/Treasurer approves
+  app.post(
+    "/api/loan-claims/:id/approve",
+    requireAuth as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { id } = req.params;
+      const claim = await storage.getClaimById(id);
+      if (!claim || claim.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Claim not found" });
+      if (claim.status !== "pending")
+        return res.status(400).json({ error: "Claim is already resolved." });
+
+      const loan = await storage.getLoanById(claim.loanId);
+      if (!loan) return res.status(404).json({ error: "Loan not found" });
+
+      // Mark the claim approved first
+      await storage.updateLoanClaim(id, {
+        status: "approved",
+        reviewedBy: req.currentUser!.id,
+        reviewedAt: new Date() as any,
+      });
+
+      // Now create the official repayment using the frozen recordLoanRepayment logic
+      const result = await storage.recordLoanRepayment(
+        claim.loanId,
+        {
+          amount: claim.amount,
+          shgAmount: claim.amount,
+          bankAmount: 0,
+          date: new Date().toISOString(),
+          recordedBy: req.currentUser!.id,
+          remarks: `Payment claim approved. Mode: ${claim.mode}`,
+        },
+        'due' // default unpaid interest policy
+      );
+      const repayment = result.repayment;
+
+      const updatedLoan = await storage.getLoanById(claim.loanId);
+      return res.json({ success: true, repayment, loan: updatedLoan });
+    },
+  );
+
+  // POST /api/loan-claims/:id/reject  — President/Treasurer rejects
+  app.post(
+    "/api/loan-claims/:id/reject",
+    requireAuth as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const claim = await storage.getClaimById(id);
+      if (!claim || claim.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Claim not found" });
+      if (claim.status !== "pending")
+        return res.status(400).json({ error: "Claim is already resolved." });
+
+      const updated = await storage.updateLoanClaim(id, {
+        status: "rejected",
+        reviewedBy: req.currentUser!.id,
+        reviewedAt: new Date() as any,
+        rejectionReason: reason?.trim() || null,
+      });
+      return res.json(updated);
+    },
+  );
+
   app.get(
     "/api/groups/:groupId/repayments",
+
     requireAuth as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;

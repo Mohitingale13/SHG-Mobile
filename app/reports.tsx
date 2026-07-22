@@ -216,6 +216,7 @@ export default function ReportsScreen() {
       groupMembers,
       bankLoans: groupBankLoans,
       bankLoanAllocations,
+      bankAllocations: bankLoanAllocations,
       bankLoanLedger,
       meetings,
       language,

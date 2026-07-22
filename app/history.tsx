@@ -11,7 +11,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useData } from "@/contexts/DataContext";
 import Colors from "@/constants/colors";
 
-type TabKey = "payments" | "loans" | "meetings";
+type TabKey = "payments" | "loans" | "meetings" | "claims";
 
 function formatDate(dateStr: string): string {
   try {
@@ -54,7 +54,7 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const { user, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
-  const { payments, loans, loanRepayments, meetings, groupMembers } = useData();
+  const { payments, loans, loanRepayments, loanClaims = [], meetings, groupMembers } = useData();
   const [activeTab, setActiveTab] = useState<TabKey>("payments");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(
     (isPresident || isTreasurer) ? null : (user?.id || null)
@@ -64,6 +64,7 @@ export default function HistoryScreen() {
     { key: "payments", label: t("payments"), icon: "wallet" },
     { key: "loans", label: t("loans"), icon: "cash" },
     { key: "meetings", label: t("meetings"), icon: "calendar" },
+    { key: "claims", label: t("pending_payments") || "Repay Requests", icon: "card" },
   ];
 
   const filteredPayments = payments
@@ -77,9 +78,49 @@ export default function HistoryScreen() {
   const sortedMeetings = [...meetings]
     .sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
 
+  const filteredClaims = (loanClaims as any[])
+    .filter((c) => selectedMemberId ? c.memberId === selectedMemberId : true)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
   const paymentSections = groupByMonth(filteredPayments.map((payment) => ({ ...payment, contributionPeriod: contributionPeriod(payment) })), "contributionPeriod");
   const loanSections = groupByMonth(filteredLoans, "createdAt");
   const meetingSections = groupByMonth(sortedMeetings, "scheduledDate");
+  const claimSections = groupByMonth(filteredClaims, "createdAt");
+
+  const renderClaimItem = ({ item }: { item: any }) => {
+    const memberName = groupMembers.find((m) => m.id === item.memberId)?.name || (t("member") || "Member");
+    const loan = loans.find((l) => l.id === item.loanId);
+    const statusColor = item.status === "approved" ? Colors.light.success
+      : item.status === "rejected" ? Colors.light.danger
+      : Colors.light.pending;
+    return (
+      <Pressable
+        style={styles.historyCard}
+        onPress={() => loan && router.push({ pathname: "/loan/[id]", params: { id: loan.id } })}
+      >
+        <View style={[styles.historyIcon, { backgroundColor: statusColor + "15" }]}>
+          <Ionicons name="card" size={18} color={statusColor} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.historyTitle}>{memberName}</Text>
+          <Text style={styles.historyDate}>
+            {t("loan_repayment") || "Loan Repayment"} · {item.mode === "online" ? (t("online") || "Online") : (t("cash") || "Cash")} · {formatDate(item.createdAt)}
+          </Text>
+          {item.remarks ? <Text style={styles.historyMeta}>"{item.remarks}"</Text> : null}
+          {loan ? <Text style={styles.historyMeta}>{t("loan") || "Loan"}: Rs. {loan.amount.toLocaleString("en-IN")}</Text> : null}
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.historyAmount}>Rs. {(item.amount || 0).toLocaleString("en-IN")}</Text>
+          <View style={[styles.statusPill, { backgroundColor: statusColor + "15" }]}>
+            <Text style={[styles.statusPillText, { color: statusColor }]}>
+              {item.status === "approved" ? (t("approved") || "Approved") : item.status === "rejected" ? (t("rejected") || "Rejected") : (t("pending") || "Pending")}
+            </Text>
+          </View>
+        </View>
+        {loan && <Ionicons name="chevron-forward" size={14} color={Colors.light.textMuted} />}
+      </Pressable>
+    );
+  };
 
   const renderPaymentItem = ({ item }: { item: typeof payments[0] }) => {
     const verifier = item.verifiedBy
@@ -194,13 +235,19 @@ export default function HistoryScreen() {
   };
 
   const currentSections: { title: string; data: any[] }[] = activeTab === "payments" ? paymentSections
-    : activeTab === "loans" ? loanSections : meetingSections;
+    : activeTab === "loans" ? loanSections
+    : activeTab === "claims" ? claimSections
+    : meetingSections;
 
   const renderItem = activeTab === "payments" ? renderPaymentItem
-    : activeTab === "loans" ? renderLoanItem : renderMeetingItem;
+    : activeTab === "loans" ? renderLoanItem
+    : activeTab === "claims" ? renderClaimItem
+    : renderMeetingItem;
 
   const emptyLabel = activeTab === "payments" ? t("noPayments")
-    : activeTab === "loans" ? t("noLoans") : t("noMeetings");
+    : activeTab === "loans" ? t("noLoans")
+    : activeTab === "claims" ? (t("no_loan_claims") || "No repayment requests yet")
+    : t("noMeetings");
 
   return (
     <View style={styles.container}>

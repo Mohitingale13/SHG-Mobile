@@ -334,3 +334,31 @@ export const memberships = pgTable("memberships", {
 
 export type Identity = typeof identities.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
+
+// ─── Loan Payment Claims ─────────────────────────────────────────────────────
+// Members submit payment claims which stay "pending" until a president/treasurer
+// verifies and approves them, at which point the actual loan ledger is updated.
+export const loanPaymentClaims = pgTable("loan_payment_claims", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id", { length: 36 }).notNull(),
+  loanId: varchar("loan_id", { length: 36 }).notNull(),
+  memberId: varchar("member_id", { length: 36 }).notNull(),
+  memberName: text("member_name").notNull(),
+  amount: integer("amount").notNull(),
+  mode: varchar("mode", { length: 20 }).notNull().default("cash"), // "cash" | "online"
+  status: varchar("status", { length: 30 }).notNull().default("pending"), // "pending" | "approved" | "rejected"
+  remarks: text("remarks"),
+  // Approval metadata
+  reviewedBy: varchar("reviewed_by", { length: 36 }),
+  reviewedAt: timestamp("reviewed_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (t) => ({
+  claimsLoanIdx: index("loan_claims_loan_idx").on(t.loanId),
+  claimsGroupIdx: index("loan_claims_group_idx").on(t.groupId),
+  claimsMemberIdx: index("loan_claims_member_idx").on(t.memberId),
+}));
+
+export type LoanPaymentClaim = typeof loanPaymentClaims.$inferSelect;

@@ -32,14 +32,15 @@ type DialogType = "approveTreasurer" | "rejectTreasurer" | "rejectPresident" | "
 export default function LoanDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const { group, isPresident, isTreasurer } = useAuth();
+  const { user, group, isPresident, isTreasurer } = useAuth();
   const { t } = useLanguage();
   const [showQrModal, setShowQrModal] = useState(false);
   const {
-    loans, loanRepayments, groupMembers, groupSummary,
+    loans, loanRepayments, loanClaims = [], groupMembers, groupSummary,
     treasurerApproveLoan, treasurerRejectLoan,
     approveLoan, rejectLoan,
     addRepayment, deleteRepayment, deleteLoan,
+    submitLoanClaim, approveLoanClaim, rejectLoanClaim,
     isMigrationWindow,
   } = useData();
   const loan = loans.find((l) => l.id === id);
@@ -57,6 +58,11 @@ export default function LoanDetailScreen() {
   const [repayAmount, setRepayAmount] = useState("");
   const [repayDate, setRepayDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [showRepay, setShowRepay] = useState(false);
+  const [showClaimForm, setShowClaimForm] = useState(false);
+  const [claimMode, setClaimMode] = useState<'online'|'cash'>('online');
+  const [claimRemarks, setClaimRemarks] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
+  const [isApproving, setIsApproving] = useState(false);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [deleteRepaymentId, setDeleteRepaymentId] = useState<string | null>(null);
@@ -139,10 +145,13 @@ export default function LoanDetailScreen() {
         return;
       }
       setResolutionError(false);
+      setIsApproving(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await approveLoan(loan.id, resolutionNo.trim());
     } catch (e: any) {
       Alert.alert(t("error"), e.message || t("error"));
+    } finally {
+      setIsApproving(false);
     }
   };
 
@@ -188,6 +197,47 @@ export default function LoanDetailScreen() {
       setIsSubmitting(false);
     }
   };
+
+  const handleClaimSubmit = async () => {
+    const amt = Number(claimAmount);
+    if (!claimAmount || isNaN(amt) || amt <= 0) {
+      Alert.alert(t('error'), t('auto.please_enter_a_valid_amo') || 'Please enter a valid amount');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await submitLoanClaim(loan.id, { amount: amt, mode: claimMode, remarks: claimRemarks });
+      Alert.alert(t('auto.payment_claim_submitted_') || 'Payment submitted', t('auto.payment_claim_submitted_') || 'Your payment claim has been submitted and is awaiting approval.');
+      setShowClaimForm(false);
+      setClaimAmount('');
+      setClaimRemarks('');
+    } catch (e: any) {
+      Alert.alert(t('error'), e.message || t('error'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleApproveClaim = async (claimId: string) => {
+    setIsApproving(true);
+    try {
+      await approveLoanClaim(claimId);
+    } catch (e: any) {
+      Alert.alert(t('error'), e.message || t('error'));
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleRejectClaim = async (claimId: string) => {
+    try {
+      await rejectLoanClaim(claimId, 'Rejected by president');
+    } catch (e: any) {
+      Alert.alert(t('error'), e.message || t('error'));
+    }
+  };
+
+  const pendingClaims = loanClaims.filter((c: any) => c.loanId === loan.id && c.status === 'pending');
 
   const handleDeleteRepayment = async () => {
     try {
@@ -410,15 +460,113 @@ export default function LoanDetailScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{t("repayment")}</Text>
-              {isPresident && (loan.status === "approved" || loan.status === "completed") && (
-                <Pressable onPress={() => {
-                  if (!showRepay) setRepayDate(new Date().toISOString().split("T")[0]);
-                  setShowRepay(!showRepay);
-                }}>
-                  <Ionicons name={showRepay ? "close" : "add-circle"} size={24} color={Colors.light.primary} />
-                </Pressable>
-              )}
+              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                {isPresident && (loan.status === "approved" || loan.status === "completed") && (
+                  <Pressable onPress={() => {
+                    if (!showRepay) setRepayDate(new Date().toISOString().split("T")[0]);
+                    setShowRepay(!showRepay);
+                    setShowClaimForm(false);
+                  }}>
+                    <Ionicons name={showRepay ? "close" : "add-circle"} size={24} color={Colors.light.primary} />
+                  </Pressable>
+                )}
+                {user?.id === loan.memberId && loan.status === "approved" && (
+                  <Pressable
+                    style={[styles.makePaymentBtn, showClaimForm && { backgroundColor: Colors.light.danger }]}
+                    onPress={() => { setShowClaimForm(!showClaimForm); setShowRepay(false); }}
+                  >
+                    <Text style={styles.makePaymentBtnText}>{showClaimForm ? (t('cancel') || 'Cancel') : (t('make_payment') || 'Make Payment')}</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
+
+            {showClaimForm && (
+              <View style={styles.repayInput}>
+                <View style={styles.inputRow}>
+                  <Text style={styles.rupee}>Rs.</Text>
+                  <TextInput
+                    style={styles.repayField}
+                    value={claimAmount}
+                    onChangeText={setClaimAmount}
+                    placeholder="0"
+                    placeholderTextColor={Colors.light.textMuted}
+                    keyboardType="number-pad"
+                    autoFocus
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10, marginVertical: 12 }}>
+                  <Pressable
+                    style={[styles.modeBtn, claimMode === 'online' && styles.modeBtnActive]}
+                    onPress={() => setClaimMode('online')}>
+                    <Ionicons name="phone-portrait-outline" size={18} color={claimMode === 'online' ? '#fff' : Colors.light.primary} />
+                    <Text style={[styles.modeBtnText, claimMode === 'online' && { color: '#fff' }]}>{t('online') || 'Online'}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.modeBtn, claimMode === 'cash' && styles.modeBtnActive]}
+                    onPress={() => setClaimMode('cash')}>
+                    <Ionicons name="cash-outline" size={18} color={claimMode === 'cash' ? '#fff' : Colors.light.primary} />
+                    <Text style={[styles.modeBtnText, claimMode === 'cash' && { color: '#fff' }]}>{t('cash') || 'Cash'}</Text>
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  style={[styles.repayField, { borderWidth: 1, borderColor: Colors.light.border, borderRadius: 10, paddingHorizontal: 12, minHeight: 44, marginBottom: 12 }]}
+                  value={claimRemarks}
+                  onChangeText={setClaimRemarks}
+                  placeholder={t('remarks') || 'Remarks (optional)'}
+                  placeholderTextColor={Colors.light.textMuted}
+                />
+
+                <Pressable
+                  style={[styles.submitClaimBtn, isSubmitting && styles.repayBtnDisabled]}
+                  onPress={handleClaimSubmit}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.submitClaimText}>{t('submit_payment') || 'Submit Payment'}</Text>}
+                </Pressable>
+
+                {claimMode === 'online' && !!group?.qrCode && (
+                  <Pressable style={{ marginTop: 12, alignItems: 'center' }} onPress={() => setShowQrModal(true)}>
+                    <Text style={{ color: Colors.light.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 14 }}>{t('view_group_qr') || 'View Group QR to Pay'}</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {pendingClaims.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={[styles.sectionTitle, { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 8, marginHorizontal: 16 }]}>{t('pending_payments') || 'Pending Payments'}</Text>
+                {pendingClaims.map((claim: any) => (
+                  <View key={claim.id} style={[styles.claimItem]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.claimAmount}>Rs. {claim.amount?.toLocaleString('en-IN')}</Text>
+                      <Text style={styles.claimMeta}>{claim.mode === 'online' ? 'Online' : 'Cash'} • {new Date(claim.createdAt).toLocaleDateString('en-IN')}</Text>
+                      {claim.remarks ? <Text style={styles.claimRemarks}>"{claim.remarks}"</Text> : null}
+                    </View>
+                    <View style={styles.claimActions}>
+                      {isPresident ? (
+                        <>
+                          <Pressable style={[styles.claimApproveBtn, isApproving && { opacity: 0.5 }]} onPress={() => handleApproveClaim(claim.id)} disabled={isApproving}>
+                            {isApproving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={16} color="#fff" />}
+                          </Pressable>
+                          <Pressable style={styles.claimRejectBtn} onPress={() => handleRejectClaim(claim.id)}>
+                            <Ionicons name="close" size={16} color={Colors.light.danger} />
+                          </Pressable>
+                        </>
+                      ) : (
+                        <View style={styles.claimPendingBadge}>
+                          <Text style={styles.claimPendingText}>{t('pending') || 'Pending'}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {showRepay && (
               <View style={styles.repayInput}>
@@ -755,11 +903,17 @@ export default function LoanDetailScreen() {
               </Text>
             )}
             <View style={styles.approvalButtons}>
-              <Pressable style={[styles.approveBtn, { backgroundColor: Colors.light.primary }]} onPress={handleApprove}>
-                <Ionicons name="checkmark" size={18} color="#fff" />
-                <Text style={styles.approveBtnText}>
-                  {loan.status === "pending_treasurer" ? t("direct_approve") : t("approve")}
-                </Text>
+              <Pressable style={[styles.approveBtn, { backgroundColor: Colors.light.primary }, isApproving && { opacity: 0.7 }]} onPress={handleApprove} disabled={isApproving}>
+                {isApproving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.approveBtnText}>
+                      {loan.status === "pending_treasurer" ? t("direct_approve") : t("approve")}
+                    </Text>
+                  </>
+                )}
               </Pressable>
               <Pressable style={styles.rejectBtn} onPress={() => setDialog("rejectPresident")}>
                 <Ionicons name="close" size={18} color={Colors.light.danger} />
@@ -1457,5 +1611,105 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.light.text,
     marginTop: 4
+  },
+  makePaymentBtn: {
+    backgroundColor: Colors.light.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  makePaymentBtnText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 13,
+    color: '#fff',
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    backgroundColor: Colors.light.card,
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  modeBtnText: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 14,
+    color: Colors.light.primary,
+  },
+  submitClaimBtn: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitClaimText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 15,
+    color: '#fff',
+  },
+  claimItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: Colors.light.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  claimAmount: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 15,
+    color: Colors.light.text,
+  },
+  claimMeta: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  claimRemarks: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 12,
+    color: Colors.light.textMuted,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  claimActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  claimApproveBtn: {
+    backgroundColor: Colors.light.success,
+    padding: 8,
+    borderRadius: 8,
+  },
+  claimRejectBtn: {
+    backgroundColor: Colors.light.danger + '15',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.danger + '30',
+  },
+  claimPendingBadge: {
+    backgroundColor: Colors.light.pending + '15',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  claimPendingText: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 12,
+    color: Colors.light.pending,
   },
 });

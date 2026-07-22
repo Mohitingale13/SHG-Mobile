@@ -32,7 +32,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { user, group, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
-  const { meetings, payments, loans, loanRepayments, groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations, updateGroupSettings } = useData();
+  const { meetings, payments, loans, loanRepayments, loanClaims = [], groupMembers, refreshData, groupSummary, groupSettings, groupBankLoans, bankLoanAllocations, updateGroupSettings } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
@@ -326,7 +326,7 @@ export default function DashboardScreen() {
 
   type ActivityItem = {
     id: string;
-    type: "payment" | "loan" | "meeting";
+    type: "payment" | "loan" | "meeting" | "claim";
     date: string;
     title: string;
     subtitle: string;
@@ -337,8 +337,7 @@ export default function DashboardScreen() {
     routeTo?: { pathname: string; params?: Record<string, string> };
   };
 
-  // The public activity feed displays group savings and meetings to ALL members for transparency.
-  // Loan activity is intentionally excluded to maintain member privacy.
+  // The public activity feed displays group savings, meetings, and loan repayment claims.
   const recentActivity: ActivityItem[] = [
     ...payments.map((p): ActivityItem => ({
       id: "p_" + p.id,
@@ -362,9 +361,26 @@ export default function DashboardScreen() {
       icon: "calendar",
       routeTo: { pathname: "/meeting/[id]", params: { id: m.id } },
     })),
+    ...loanClaims.map((c: any): ActivityItem => {
+      const memberName = groupMembers.find((m) => m.id === c.memberId)?.name || t("member") || "Member";
+      const loan = loans.find((l) => l.id === c.loanId);
+      const statusColor = c.status === "approved" ? Colors.light.success : c.status === "rejected" ? Colors.light.danger : Colors.light.pending;
+      return {
+        id: "claim_" + c.id,
+        type: "claim",
+        date: c.createdAt,
+        title: memberName,
+        subtitle: `${t("loan_repayment") || "Loan Repayment"} · ${c.mode === "online" ? (t("online") || "Online") : (t("cash") || "Cash")} · ${formatDate(c.createdAt)}`,
+        amount: `Rs. ${(c.amount || 0).toLocaleString("en-IN")}`,
+        statusColor,
+        statusLabel: c.status === "approved" ? (t("approved") || "Approved") : c.status === "rejected" ? (t("rejected") || "Rejected") : (t("pending") || "Pending"),
+        icon: "card",
+        routeTo: loan ? { pathname: "/loan/[id]", params: { id: loan.id } } : undefined,
+      };
+    }),
   ]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 8);
+    .slice(0, 10);
 
   // ─── Bank Loan Dashboard Data ──────────────────────────────────────────────
   const bankLoanDashData = useMemo(() => {
@@ -1061,13 +1077,17 @@ export default function DashboardScreen() {
                     <Text style={styles.activityDate}>{item.subtitle}</Text>
                     <View style={[styles.activityTypeBadge, {
                       backgroundColor: item.type === "payment" ? Colors.light.success + "12"
-                        : item.type === "loan" ? Colors.light.primary + "12" : Colors.light.secondary + "12",
+                        : item.type === "loan" ? Colors.light.primary + "12"
+                        : item.type === "claim" ? "#D97706" + "12"
+                        : Colors.light.secondary + "12",
                     }]}>
                       <Text style={[styles.activityTypeText, {
                         color: item.type === "payment" ? Colors.light.success
-                          : item.type === "loan" ? Colors.light.primary : Colors.light.secondary,
+                          : item.type === "loan" ? Colors.light.primary
+                          : item.type === "claim" ? "#D97706"
+                          : Colors.light.secondary,
                       }]}>
-                        {item.type === "payment" ? t("payments") : item.type === "loan" ? t("loans") : t("meetings")}
+                        {item.type === "payment" ? t("payments") : item.type === "loan" ? t("loans") : item.type === "claim" ? (t("loan_repayment") || "Repayment") : t("meetings")}
                       </Text>
                     </View>
                   </View>
