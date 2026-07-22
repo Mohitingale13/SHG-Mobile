@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, Platform,
-  TextInput, Alert, RefreshControl, Modal, ScrollView,
+  TextInput, Alert, RefreshControl, Modal, ScrollView, Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,7 @@ import { useData, Payment, PaymentStatus } from "@/contexts/DataContext";
 import Colors from "@/constants/colors";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import FilterPicker, { FilterOption } from "@/components/FilterPicker";
+import { useFocusEffect } from "expo-router";
 
 function paymentStatusColor(status: PaymentStatus): string {
   switch (status) {
@@ -211,10 +212,18 @@ function PaymentItem({
 
 export default function PaymentsScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isPresident, isTreasurer } = useAuth();
+  const { user, group, isPresident, isTreasurer } = useAuth();
   const { t, language } = useLanguage();
-  const { payments, groupMembers, recordPayment, verifyPayment, reopenPayment, deletePayment, refreshData } = useData();
+  const { payments, groupMembers, groupSettings, recordPayment, verifyPayment, reopenPayment, deletePayment, refreshData } = useData();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (refreshData) refreshData();
+    }, [])
+  );
+
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filters State
   const [filterMonth, setFilterMonth] = useState<string>("all");
@@ -236,6 +245,69 @@ export default function PaymentsScreen() {
   const [paymentYear, setPaymentYear] = useState(String(new Date().getFullYear()));
   const [paymentMode, setPaymentMode] = useState<"cash" | "online">("cash");
   const [refreshing, setRefreshing] = useState(false);
+
+  // Monthly Snapshot State
+  const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
+
+  const currentMonthStr = useMemo(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    return `${yyyy}-${mm}`;
+  }, []);
+
+  const currentMonthDueDateStr = useMemo(() => {
+    if (!groupSettings?.contributionDueDay) return "";
+    const [yyyy, mm] = currentMonthStr.split("-");
+    const d = new Date(`${yyyy}-${mm}-${String(groupSettings.contributionDueDay).padStart(2, "0")}`);
+    d.setMonth(d.getMonth() + 1); // Payment is due next month
+    const formattedDate = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    return formattedDate;
+  }, [currentMonthStr, groupSettings]);
+
+  const { paidMembers, unpaidMembers } = useMemo(() => {
+    const active = groupMembers.filter(m => m.status === "active");
+    const paid = active.filter(m => {
+      return payments.some(p => p.memberId === m.id && p.month === currentMonthStr && p.status !== "rejected" && p.status !== "payment_not_received");
+    });
+    const unpaid = active.filter(m => !paid.some(p => p.id === m.id));
+    return { paidMembers: paid, unpaidMembers: unpaid };
+  }, [groupMembers, payments, currentMonthStr]);
+
+  // Auto-fill logic for payment form
+  useEffect(() => {
+    if (!showInput) return;
+    
+    // Always pre-fill the base amount
+    const baseAmount = groupSettings?.monthlyContributionAmount || 0;
+    setAmount(baseAmount > 0 ? String(baseAmount) : "");
+
+    // Calculate late fee if applicable
+    let penalty = 0;
+    if (groupSettings?.contributionDueDay && groupSettings?.lateFeeAmount) {
+      const dueDay = groupSettings.contributionDueDay;
+      const graceDays = groupSettings.gracePeriodDays || 0;
+      
+      const paymentDateStr = `${paymentYear}-${paymentMonth}-${String(dueDay).padStart(2, "0")}`;
+      const dueDate = new Date(paymentDateStr);
+      // Payment for a month is due on the Nth day of the NEXT month
+      dueDate.setMonth(dueDate.getMonth() + 1);
+      
+      const deadline = new Date(dueDate);
+      deadline.setDate(dueDate.getDate() + graceDays);
+      // Reset times to midnight to ensure exact day comparisons
+      deadline.setHours(0, 0, 0, 0);
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (today > deadline) {
+        penalty = groupSettings.lateFeeAmount;
+      }
+    }
+    
+    setLateFee(penalty > 0 ? String(penalty) : "");
+  }, [showInput, paymentMonth, paymentYear, groupSettings]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -302,9 +374,11 @@ export default function PaymentsScreen() {
 
   const handleConfirmDelete = async () => {
     if (!deletePaymentId) return;
+    setIsDeleting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await deletePayment(deletePaymentId);
     setDeletePaymentId(null);
+    setIsDeleting(false);
   };
 
   const filteredPayments = useMemo(() => {
@@ -357,9 +431,10 @@ export default function PaymentsScreen() {
   const pendingOnlineCount = payments.filter((p) => p.status === "pending_verification" && p.mode === "online").length;
   const canVerifyCash = isPresident || isTreasurer;
   const canVerifyOnline = isTreasurer || isPresident;
-  const canDeclare = isPresident || isTreasurer;
+  const canDeclare = true; // All members can declare payments
   const activeMembers = groupMembers.filter((member) => member.status === "active");
-  const memberOptions: FilterOption[] = activeMembers.map((member) => ({ value: member.id, label: member.name }));
+  const allowedMembers = (isPresident || isTreasurer) ? activeMembers : activeMembers.filter(m => m.id === user?.id);
+  const memberOptions: FilterOption[] = allowedMembers.map((member) => ({ value: member.id, label: member.name }));
   const monthOptions: FilterOption[] = [
     { value: "01", label: "January" }, { value: "02", label: "February" },
     { value: "03", label: "March" }, { value: "04", label: "April" },
@@ -375,7 +450,7 @@ export default function PaymentsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <View>
           <Text style={styles.title}>{t("payments")}</Text>
           {pendingCashCount + pendingOnlineCount > 0 && (
@@ -411,6 +486,30 @@ export default function PaymentsScreen() {
               <Ionicons name={showInput ? "close" : "add"} size={22} color="#fff" />
             </Pressable>
           )}
+        </View>
+      </View>
+
+      {/* Monthly Snapshot Cards */}
+      <View style={styles.snapshotContainer}>
+        <Text style={styles.snapshotTitle}>{t("monthly_snapshot")} ({currentMonthStr})</Text>
+        <View style={styles.snapshotCards}>
+          <Pressable
+            style={[styles.snapshotCard, styles.snapshotCardPaid, !showUnpaidOnly && styles.snapshotCardActive]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowUnpaidOnly(false); }}
+          >
+            <Ionicons name="checkmark-circle" size={24} color={Colors.light.success} />
+            <Text style={styles.snapshotCardValue}>{paidMembers.length}</Text>
+            <Text style={styles.snapshotCardLabel}>{t("paid")}</Text>
+          </Pressable>
+          
+          <Pressable
+            style={[styles.snapshotCard, styles.snapshotCardUnpaid, showUnpaidOnly && styles.snapshotCardActive]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowUnpaidOnly(true); }}
+          >
+            <Ionicons name="close-circle" size={24} color={Colors.light.danger} />
+            <Text style={styles.snapshotCardValue}>{unpaidMembers.length}</Text>
+            <Text style={styles.snapshotCardLabel}>{t("not_paid")}</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -491,13 +590,13 @@ export default function PaymentsScreen() {
             <FilterPicker label="Year" value={paymentYear} onChange={setPaymentYear} options={yearOptions} icon="calendar-outline" />
           </View>
           <View style={styles.recordAmounts}>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, !(isPresident || isTreasurer) && { backgroundColor: Colors.light.background }]}>
               <Text style={styles.rupeeSign}>Rs.</Text>
-              <TextInput style={styles.amountInput} placeholder={t("amount")} placeholderTextColor={Colors.light.textMuted} value={amount} onChangeText={setAmount} keyboardType="number-pad" autoFocus />
+              <TextInput style={[styles.amountInput, !(isPresident || isTreasurer) && { color: Colors.light.textMuted }]} placeholder={t("amount")} placeholderTextColor={Colors.light.textMuted} value={amount} onChangeText={setAmount} keyboardType="number-pad" editable={isPresident || isTreasurer} />
             </View>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, !(isPresident || isTreasurer) && { backgroundColor: Colors.light.background }]}>
               <Text style={styles.rupeeSign}>Rs.</Text>
-              <TextInput style={styles.amountInput} placeholder="Late fee" placeholderTextColor={Colors.light.textMuted} value={lateFee} onChangeText={setLateFee} keyboardType="number-pad" />
+              <TextInput style={[styles.amountInput, !(isPresident || isTreasurer) && { color: Colors.light.textMuted }]} placeholder="Late fee" placeholderTextColor={Colors.light.textMuted} value={lateFee} onChangeText={setLateFee} keyboardType="number-pad" editable={isPresident || isTreasurer} />
             </View>
           </View>
           <View style={styles.modeButtons}>
@@ -508,6 +607,18 @@ export default function PaymentsScreen() {
               <Ionicons name="phone-portrait-outline" size={20} color="#2563EB" /><Text style={[styles.modeBtnText, { color: "#2563EB" }]}>{t("online")}</Text>
             </Pressable>
           </View>
+
+          {paymentMode === "online" && group?.qrCode && (
+            <View style={styles.qrBar}>
+              <View style={styles.qrBarHeader}>
+                <Ionicons name="qr-code" size={16} color={Colors.light.text} />
+                <Text style={styles.qrBarTitle}>Group QR Code</Text>
+              </View>
+              <Image source={{ uri: group.qrCode }} style={styles.qrPreview} />
+              <Text style={styles.qrTapHint}>Pay to the SHG account</Text>
+            </View>
+          )}
+
           <View style={styles.recordActions}>
             <Pressable onPress={resetForm} style={styles.cancelModeBtn}><Text style={styles.cancelModeText}>{t("cancel")}</Text></Pressable>
             <Pressable style={styles.recordSubmitBtn} onPress={handleRecordPayment}><Ionicons name="checkmark" size={18} color="#fff" /><Text style={styles.recordSubmitText}>Save payment</Text></Pressable>
@@ -515,33 +626,72 @@ export default function PaymentsScreen() {
         </View>
       )}
 
-      <FlatList
-        data={sortedPayments}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <PaymentItem
-            payment={item}
-            user={user}
-            isPresident={isPresident}
-            canVerifyCash={canVerifyCash}
-            canVerifyOnline={canVerifyOnline}
-            canDelete={isPresident}
-            onVerify={handleVerify}
-            onReject={handleRejectPrompt}
-            onReopen={handleReopen}
-            onDelete={setDeletePaymentId}
-          />
-        )}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.light.primary} />}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="wallet-outline" size={48} color={Colors.light.textMuted} />
-            <Text style={styles.emptyText}>{t("noPayments")}</Text>
-          </View>
-        }
-        scrollEnabled={sortedPayments.length > 0}
-      />
+      {showUnpaidOnly ? (
+        <FlatList
+          data={unpaidMembers}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.unpaidItem}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <View style={styles.unpaidAvatar}>
+                  <Ionicons name="person" size={24} color="#F87171" />
+                </View>
+                <Text style={styles.unpaidName}>{item.name}</Text>
+              </View>
+              {(isPresident || isTreasurer) && (
+                <Pressable
+                  style={styles.collectBtn}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    setMemberId(item.id);
+                    setPaymentMonth(currentMonthStr.split("-")[1]);
+                    setPaymentYear(currentMonthStr.split("-")[0]);
+                    setShowUnpaidOnly(false);
+                    setShowInput(true);
+                  }}
+                >
+                  <Ionicons name="cash-outline" size={18} color="#fff" />
+                  <Text style={styles.collectBtnText}>{t("collect")}</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="checkmark-circle-outline" size={48} color={Colors.light.success} />
+              <Text style={styles.emptyText}>{t("all_paid")}</Text>
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          data={sortedPayments}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <PaymentItem
+              payment={item}
+              user={user}
+              isPresident={isPresident}
+              canVerifyCash={canVerifyCash}
+              canVerifyOnline={canVerifyOnline}
+              canDelete={isPresident}
+              onVerify={handleVerify}
+              onReject={handleRejectPrompt}
+              onReopen={handleReopen}
+              onDelete={setDeletePaymentId}
+            />
+          )}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.light.primary} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="wallet-outline" size={48} color={Colors.light.textMuted} />
+              <Text style={styles.emptyText}>{t("noPayments")}</Text>
+            </View>
+          }
+        />
+      )}
 
       <Modal visible={rejectDialog !== null} transparent animationType="fade" onRequestClose={() => setRejectDialog(null)}>
         <View style={styles.modalOverlay}>
@@ -575,8 +725,9 @@ export default function PaymentsScreen() {
         confirmText={t("auto.delete")}
         cancelText={t("cancel")}
         destructive
+        isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
-        onCancel={() => setDeletePaymentId(null)}
+        onCancel={() => { if (!isDeleting) setDeletePaymentId(null); }}
       />
     </View>
   );
@@ -584,6 +735,38 @@ export default function PaymentsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
+  snapshotContainer: { paddingHorizontal: 20, marginBottom: 16 },
+  snapshotTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 14, color: Colors.light.text, marginBottom: 8 },
+  snapshotCards: { flexDirection: "row", gap: 12 },
+  snapshotCard: {
+    flex: 1, padding: 12, borderRadius: 16, borderWidth: 1,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: Colors.light.card, borderColor: Colors.light.border,
+  },
+  snapshotCardPaid: { borderColor: Colors.light.success + "50" },
+  snapshotCardUnpaid: { borderColor: Colors.light.danger + "50" },
+  snapshotCardActive: { borderWidth: 2, transform: [{ scale: 1.02 }] },
+  snapshotCardValue: { fontFamily: "Poppins_700Bold", fontSize: 24, color: Colors.light.text, marginTop: 4 },
+  snapshotCardLabel: { fontFamily: "Poppins_500Medium", fontSize: 12, color: Colors.light.textMuted },
+  
+  unpaidItem: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginHorizontal: 20, marginBottom: 12, padding: 16,
+    backgroundColor: Colors.light.card, borderRadius: 16,
+    borderWidth: 1, borderColor: Colors.light.danger + "30",
+  },
+  unpaidAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: Colors.light.danger + "15",
+    alignItems: "center", justifyContent: "center",
+  },
+  unpaidName: { fontFamily: "Poppins_600SemiBold", fontSize: 15, color: Colors.light.text },
+  collectBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 16, paddingVertical: 10,
+    backgroundColor: Colors.light.primary, borderRadius: 12,
+  },
+  collectBtnText: { fontFamily: "Poppins_600SemiBold", fontSize: 13, color: "#fff" },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -606,6 +789,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.light.card, borderRadius: 14,
     borderWidth: 1, borderColor: Colors.light.border, paddingHorizontal: 14,
+    minWidth: 0,
   },
   rupeeSign: {
     fontFamily: "Poppins_600SemiBold", fontSize: 16,
@@ -614,6 +798,8 @@ const styles = StyleSheet.create({
   amountInput: {
     flex: 1, fontFamily: "Poppins_500Medium", fontSize: 16,
     color: Colors.light.text, paddingVertical: 14,
+    minWidth: 0,
+    ...Platform.select({ web: { outlineStyle: "none" } as any, default: {} }),
   },
   recordForm: {
     marginHorizontal: 20, marginBottom: 12, padding: 16, gap: 12,

@@ -119,7 +119,7 @@ export default function LoanSettingsScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12,
+            paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12,
             paddingBottom: insets.bottom + 40,
           },
         ]}
@@ -170,80 +170,6 @@ export default function LoanSettingsScreen() {
           <Text style={styles.fieldHint}>
             {t("auto.no_member_can_request_a")}
           </Text>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>{t("durationRules")}</Text>
-            <Pressable style={styles.addBtn} onPress={addRule}>
-              <Ionicons name="add" size={16} color="#fff" />
-              <Text style={styles.addBtnText}>{t("addRule")}</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.fieldHint}>
-            {t("auto.set_allowed_duration_range_based")}
-          </Text>
-
-          {rules.map((rule, i) => (
-            <View key={i} style={styles.ruleCard}>
-              <View style={styles.ruleCardHeader}>
-                <Text style={styles.ruleCardTitle}>
-                  {t("durationRule")} {i + 1}
-                </Text>
-                <Pressable onPress={() => removeRule(i)} style={styles.removeBtn}>
-                  <Ionicons name="trash-outline" size={16} color={Colors.light.danger} />
-                  <Text style={styles.removeBtnText}>{t("removeRule")}</Text>
-                </Pressable>
-              </View>
-
-              <Text style={styles.ruleFieldLabel}>{t("upToAmount")} *</Text>
-              <View style={styles.inputContainer}>
-                <Text style={styles.rupee}>Rs.</Text>
-                <TextInput
-                  style={styles.input}
-                  value={rule.maxAmount > 0 ? String(rule.maxAmount) : ""}
-                  onChangeText={(v) => updateRule(i, "maxAmount", v)}
-                  keyboardType="number-pad"
-                  placeholder="10000"
-                  placeholderTextColor={Colors.light.textMuted}
-                />
-              </View>
-
-              <View style={styles.durationRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.ruleFieldLabel}>{t("minMonths")} *</Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      value={rule.minDuration > 0 ? String(rule.minDuration) : ""}
-                      onChangeText={(v) => updateRule(i, "minDuration", v)}
-                      keyboardType="number-pad"
-                      placeholder="1"
-                      placeholderTextColor={Colors.light.textMuted}
-                    />
-                    <Text style={styles.suffix}>{t("auto.mo")}</Text>
-                  </View>
-                </View>
-                <View style={styles.durationSep}>
-                  <Text style={styles.durationSepText}>→</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.ruleFieldLabel}>{t("maxMonths")} *</Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      value={rule.maxDuration > 0 ? String(rule.maxDuration) : ""}
-                      onChangeText={(v) => updateRule(i, "maxDuration", v)}
-                      keyboardType="number-pad"
-                      placeholder="12"
-                      placeholderTextColor={Colors.light.textMuted}
-                    />
-                    <Text style={styles.suffix}>{t("auto.mo")}</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          ))}
         </View>
 
         <Pressable

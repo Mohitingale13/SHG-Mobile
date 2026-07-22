@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
   TextInput, ActivityIndicator,
@@ -32,6 +32,9 @@ export default function MeetingDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<"cancel" | "delete" | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [localAttendance, setLocalAttendance] = useState<string[]>(meeting?.attendance || []);
+
+
 
   if (!meeting) {
     return (
@@ -60,22 +63,22 @@ export default function MeetingDetailScreen() {
   };
 
   const handleCancelMeeting = async () => {
-    setDialog(null);
     setActionLoading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await cancelMeeting(meeting.id);
+      setDialog(null);
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleDeleteMeeting = async () => {
-    setDialog(null);
     setActionLoading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await deleteMeeting(meeting.id);
+      setDialog(null);
       router.back();
     } finally {
       setActionLoading(false);
@@ -87,14 +90,19 @@ export default function MeetingDetailScreen() {
     await updateMeeting(meeting.id, { status: "completed" });
   };
 
-  const toggleAttendance = async (memberId: string) => {
+  const toggleAttendance = (memberId: string) => {
     if (!canManage) return;
     Haptics.selectionAsync();
-    const current = meeting.attendance || [];
-    const updated = current.includes(memberId)
-      ? current.filter((a) => a !== memberId)
-      : [...current, memberId];
-    await updateMeeting(meeting.id, { attendance: updated });
+    
+    setLocalAttendance((prev) => {
+      const updated = prev.includes(memberId)
+        ? prev.filter((a) => a !== memberId)
+        : [...prev, memberId];
+        
+      // Fire and forget backend update
+      updateMeeting(meeting.id, { attendance: updated }).catch(console.error);
+      return updated;
+    });
   };
 
   const statusColor = meeting.status === "scheduled" ? Colors.light.primary :
@@ -107,7 +115,7 @@ export default function MeetingDetailScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12,
+            paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12,
             paddingBottom: insets.bottom + 40,
           },
         ]}
@@ -219,7 +227,7 @@ export default function MeetingDetailScreen() {
             <View style={styles.detailCard}>
               <Text style={styles.fieldLabel}>{t("attendance")}</Text>
               {groupMembers.filter((m) => m.status === "active").map((member) => {
-                const isPresent = meeting.attendance?.includes(member.id);
+                const isPresent = localAttendance.includes(member.id);
                 return (
                   <Pressable
                     key={member.id}
@@ -259,7 +267,7 @@ export default function MeetingDetailScreen() {
                   >
                     <Ionicons name="close-circle" size={20} color={Colors.light.pending} />
                     <Text style={[styles.cancelBtnText, { color: Colors.light.pending }]}>
-                      {t("cancelMeeting")}
+                      {t("auto.cancel_meeting")}
                     </Text>
                   </Pressable>
                 )}
@@ -270,7 +278,7 @@ export default function MeetingDetailScreen() {
                     disabled={actionLoading}
                   >
                     <Ionicons name="trash-outline" size={20} color={Colors.light.danger} />
-                    <Text style={styles.deleteBtnText}>{t("deleteMeeting")}</Text>
+                    <Text style={styles.deleteBtnText}>{t("auto.delete_meeting")}</Text>
                   </Pressable>
                 )}
               </View>
@@ -286,6 +294,7 @@ export default function MeetingDetailScreen() {
         confirmText={t("auto.yes_cancel")}
         cancelText={t("auto.keep")}
         destructive={false}
+        isLoading={actionLoading}
         onConfirm={handleCancelMeeting}
         onCancel={() => setDialog(null)}
       />
@@ -297,6 +306,7 @@ export default function MeetingDetailScreen() {
         confirmText={t("auto.delete")}
         cancelText={t("auto.keep")}
         destructive
+        isLoading={actionLoading}
         onConfirm={handleDeleteMeeting}
         onCancel={() => setDialog(null)}
       />

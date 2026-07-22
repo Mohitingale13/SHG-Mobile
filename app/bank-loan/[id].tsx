@@ -36,6 +36,7 @@ export default function BankLoanDetailScreen() {
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [allocating, setAllocating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const activeMembers = useMemo(() => groupMembers.filter(m => m.status === "active"), [groupMembers]);
 
   const fetchSummary = useCallback(async () => {
@@ -52,6 +53,14 @@ export default function BankLoanDetailScreen() {
   }, [id, isPresident, isTreasurer]);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
+
+  // ─── Compute live allocation total for modal ───────────────────────────────
+  const computedTotal = useMemo(() => {
+    if (allocMethod === "equal") {
+      return selectedMembers.length > 0 ? (loan?.amount || 0) : 0;
+    }
+    return selectedMembers.reduce((sum, id) => sum + (Number(customAmounts[id]) || 0), 0);
+  }, [allocMethod, selectedMembers, customAmounts, loan?.amount]);
 
   if (!isPresident && !isTreasurer) {
     return (
@@ -80,14 +89,6 @@ export default function BankLoanDetailScreen() {
   const totalOutstandingInterest = s?.totalOutstandingInterest ?? allocations.reduce((sum, a) => sum + a.outstandingInterest, 0);
   const membersCompleted = s?.membersCompleted ?? allocations.filter(a => a.status === "completed").length;
   const monthlyRate = (loan.annualInterestRate / 12).toFixed(2);
-
-  // ─── Compute live allocation total for modal ───────────────────────────────
-  const computedTotal = useMemo(() => {
-    if (allocMethod === "equal") {
-      return selectedMembers.length > 0 ? loan.amount : 0;
-    }
-    return selectedMembers.reduce((sum, id) => sum + (Number(customAmounts[id]) || 0), 0);
-  }, [allocMethod, selectedMembers, customAmounts, loan.amount]);
 
   const handleToggleMember = (memberId: string) => {
     setSelectedMembers(prev => prev.includes(memberId) ? prev.filter(x => x !== memberId) : [...prev, memberId]);
@@ -147,6 +148,7 @@ export default function BankLoanDetailScreen() {
 
   const executeDelete = async () => {
     console.log("Delete button confirmed, initiating deletion...");
+    setDeleting(true);
     try {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       console.log("Calling deleteGroupBankLoan for", loan.id);
@@ -158,6 +160,7 @@ export default function BankLoanDetailScreen() {
     } catch (err: any) {
       console.error("Deletion failed:", err);
       Alert.alert(t("error"), err.message || t("error_occurred"));
+      setDeleting(false);
     }
   };
 
@@ -332,9 +335,19 @@ export default function BankLoanDetailScreen() {
                   <Pressable style={[styles.primaryBtn, { flex: 1, backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border }]} onPress={() => setConfirmDelete(false)}>
                     <Text style={[styles.primaryBtnText, { color: Colors.light.text }]}>{t("cancel")}</Text>
                   </Pressable>
-                  <Pressable style={[styles.primaryBtn, { flex: 1, backgroundColor: Colors.light.danger }]} onPress={executeDelete}>
-                    <Ionicons name="warning-outline" size={20} color="#fff" />
-                    <Text style={styles.primaryBtnText}>{t("bank_loan.delete")}</Text>
+                  <Pressable 
+                    style={[styles.primaryBtn, { flex: 1, backgroundColor: deleting ? Colors.light.border : Colors.light.danger }]} 
+                    onPress={executeDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="warning-outline" size={20} color="#fff" />
+                        <Text style={styles.primaryBtnText}>{t("bank_loan.delete")}</Text>
+                      </>
+                    )}
                   </Pressable>
                 </View>
               </View>

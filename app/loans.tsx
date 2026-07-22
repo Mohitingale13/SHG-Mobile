@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -56,10 +56,7 @@ function LoanItem({ loan }: { loan: Loan }) {
           <Text style={styles.detailLabel}>{t("loanAmount")}</Text>
           <Text style={styles.detailValue}>Rs. {loan.amount.toLocaleString("en-IN")}</Text>
         </View>
-        <View style={styles.loanDetail}>
-          <Text style={styles.detailLabel}>{t("interest")}</Text>
-          <Text style={styles.detailValue}>{loan.interest}%</Text>
-        </View>
+
         <View style={styles.loanDetail}>
           <Text style={styles.detailLabel}>{t("monthly_installment")}</Text>
           <Text style={styles.detailValue}>Rs. {totalEmi.toLocaleString("en-IN")}</Text>
@@ -80,7 +77,14 @@ function LoanItem({ loan }: { loan: Loan }) {
 export default function LoansScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useLanguage();
-  const { loans } = useData();
+  const { loans, refreshData } = useData();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (refreshData) refreshData();
+    }, [])
+  );
+
   const { isPresident, isTreasurer } = useAuth();
   
   // Filters State
@@ -133,7 +137,7 @@ export default function LoansScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <Pressable onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
         </Pressable>
@@ -148,14 +152,12 @@ export default function LoansScreen() {
           >
             <Ionicons name="filter" size={20} color={showFilters ? "#fff" : Colors.light.text} />
           </Pressable>
-          {(isPresident || isTreasurer) && (
-            <Pressable
-              style={styles.addBtn}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/create-loan"); }}
-            >
-              <Ionicons name="add" size={22} color="#fff" />
-            </Pressable>
-          )}
+          <Pressable
+            style={styles.addBtn}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/create-loan"); }}
+          >
+            <Ionicons name="add" size={22} color="#fff" />
+          </Pressable>
         </View>
       </View>
 

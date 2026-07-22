@@ -50,17 +50,18 @@ export function requirePresident(req: AuthRequest, res: Response, next: NextFunc
 
 export function requirePresidentOrTreasurer(req: AuthRequest, res: Response, next: NextFunction) {
   if (req.currentUser?.role !== "president" && req.currentUser?.role !== "treasurer") {
+    console.error("403 President or Treasurer access required. User role:", req.currentUser?.role);
     return res.status(403).json({ error: "President or Treasurer access required" });
   }
   next();
 }
 
 export function requireSameGroup(
-  groupId: string,
   req: AuthRequest,
   res: Response,
   next: NextFunction,
 ) {
+  const { groupId } = req.params;
   if (req.currentUser?.groupId !== groupId) {
     return res.status(403).json({ error: "Access denied: different group" });
   }
@@ -84,31 +85,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/register/president", async (req, res) => {
     try {
-      const {
-        name,
-        phone,
-        password,
-        village,
-        joinDate,
-        exitDate,
-        uniqueGroupCode,
-      } = req.body;
+      const { name, phone, password, village, joinDate, exitDate, uniqueGroupCode } = req.body;
       if (!name || !phone || !password || !village || !uniqueGroupCode) {
         return res.status(400).json({ error: "Missing required fields" });
       }
 
       const existingGroup = await storage.getGroupByUniqueGroupCode(uniqueGroupCode);
-      if (!existingGroup) {
-        return res.status(404).json({ error: "groupNotFound" });
-      }
-      
+      if (!existingGroup) return res.status(404).json({ error: "groupNotFound" });
       if (existingGroup.presidentId || existingGroup.status !== "pending") {
         return res.status(409).json({ error: "Group already claimed" });
       }
 
-      const existingPhone = await storage.getUserByPhone(phone);
-      if (existingPhone) {
-        return res.status(409).json({ error: "Phone number already registered" });
+      // Identity-aware duplicate check: block only if already a member of THIS group
+      const existingIdentity = await storage.getIdentityByPhone(phone);
+      if (existingIdentity) {
+        const existingMembership = await storage.getMembershipByIdentityAndGroup(existingIdentity.id, existingGroup.groupId);
+        if (existingMembership) {
+          return res.status(409).json({ error: "alreadyMemberOfThisGroup" });
+        }
+      } else {
+        // Legacy fallback: also check old users table within same group
+        const usersInGroup = await storage.getUsersByGroupId(existingGroup.groupId);
+        if (usersInGroup.some(u => u.phone === phone)) {
+          return res.status(409).json({ error: "alreadyMemberOfThisGroup" });
+        }
       }
 
       const user = await storage.createUser({
@@ -130,12 +130,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         activatedOn: new Date(),
       });
 
+      // Create or reuse identity, then create membership
+      let identity = existingIdentity;
+      if (!identity) {
+        identity = await storage.createIdentity({ phone, password, name, preferredLanguage: existingGroup.preferredLanguage || "en" });
+      } else {
+        // Sync password to identity
+        await storage.updateIdentity(identity.id, { password });
+      }
+      const membership = await storage.createMembership({ identityId: identity.id, groupId: existingGroup.groupId, userId: user.id, role: "president", status: "active" });
+      await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membership.id });
+
       const session = await storage.createSession(user.id);
       const group = await storage.getGroupByGroupId(existingGroup.groupId);
       const { password: _p, ...safeUser } = user;
-      return res
-        .status(201)
-        .json({ token: session.token, user: safeUser, group });
+      return res.status(201).json({ token: session.token, user: safeUser, group });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Internal server error" });
@@ -150,35 +159,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const group = await storage.getGroupByUniqueGroupCode(uniqueGroupCode);
-      if (!group) {
-        return res.status(404).json({ error: "invalidOrExpiredCode" });
-      }
-      if (group.status === "pending") {
-        return res.status(404).json({ error: "groupNotFound" });
-      }
-      const existingPhone = await storage.getUserByPhone(phone);
-      if (existingPhone) {
-        return res.status(409).json({ error: "Phone number already registered" });
+      if (!group) return res.status(404).json({ error: "invalidOrExpiredCode" });
+      if (group.status === "pending") return res.status(404).json({ error: "groupNotFound" });
+
+      // Identity-aware check
+      const existingIdentity = await storage.getIdentityByPhone(phone);
+      if (existingIdentity) {
+        const existingMembership = await storage.getMembershipByIdentityAndGroup(existingIdentity.id, group.groupId);
+        if (existingMembership) {
+          return res.status(409).json({ error: "alreadyMemberOfThisGroup" });
+        }
       }
 
-      const user = await storage.createUser({
-        name,
-        phone,
-        password,
-        village,
-        joinDate: joinDate ? new Date(joinDate) : now(req),
-        exitDate: exitDate ? new Date(exitDate) : undefined,
-        role: "member",
-        groupId: group.groupId,
-        status: "active",
-        preferredLanguage: group.preferredLanguage,
-      });
+      // Legacy: check if the phone was manually added by president in this group (password123 placeholder)
+      const usersInGroup = await storage.getUsersByGroupId(group.groupId);
+      const manuallyAdded = usersInGroup.find(u => u.phone === phone && u.password === "password123");
+
+      let user;
+      if (manuallyAdded) {
+        user = await storage.updateUser(manuallyAdded.id, { name, password, village });
+        // Sync to identity
+        if (existingIdentity) {
+          await storage.updateIdentity(existingIdentity.id, { password });
+        } else {
+          const identity = await storage.createIdentity({ phone, password, name, preferredLanguage: group.preferredLanguage || "en" });
+          const membership = await storage.createMembership({ identityId: identity.id, groupId: group.groupId, userId: manuallyAdded.id, role: manuallyAdded.role as any, status: "active" });
+          await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membership.id });
+        }
+      } else {
+        user = await storage.createUser({
+          name, phone, password, village,
+          joinDate: joinDate ? new Date(joinDate) : now(req),
+          exitDate: exitDate ? new Date(exitDate) : undefined,
+          role: "member",
+          groupId: group.groupId,
+          status: "active",
+          preferredLanguage: group.preferredLanguage,
+        });
+
+        let identity = existingIdentity;
+        if (!identity) {
+          identity = await storage.createIdentity({ phone, password, name, preferredLanguage: group.preferredLanguage || "en" });
+        } else {
+          await storage.updateIdentity(identity.id, { password });
+        }
+        const membership = await storage.createMembership({ identityId: identity.id, groupId: group.groupId, userId: user.id, role: "member", status: "active" });
+        if (!existingIdentity?.lastOpenedMembershipId) {
+          await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membership.id });
+        }
+      }
 
       const session = await storage.createSession(user.id);
       const { password: _p, ...safeUser } = user;
-      return res
-        .status(201)
-        .json({ token: session.token, user: safeUser, group });
+      return res.status(201).json({ token: session.token, user: safeUser, group });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/groups/verify/:code", async (req, res) => {
+    try {
+      const { code } = req.params;
+      const group = await storage.getGroupByUniqueGroupCode(code.trim());
+      
+      if (!group) {
+        return res.status(404).json({ error: "invalidOrExpiredCode" });
+      }
+      
+      return res.json({ name: group.name, uniqueGroupCode: group.uniqueGroupCode });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Internal server error" });
@@ -187,16 +236,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { phone, password } = req.body;
+      const { phone, password, membershipId } = req.body;
       if (!phone || !password) {
         return res.status(400).json({ error: "Phone and password required" });
       }
 
+      // ── New identity-based login ──
+      const identity = await storage.getIdentityByPhone(phone);
+      if (identity) {
+        if (identity.password !== password) {
+          return res.status(401).json({ error: "invalidCredentials" });
+        }
+        const allMemberships = await storage.getMembershipsByIdentityId(identity.id);
+        const active = allMemberships.filter(m => m.status === "active");
+        if (active.length === 0) {
+          return res.status(401).json({ error: "invalidCredentials" });
+        }
+
+        // Determine which membership to activate
+        let targetMembership = membershipId
+          ? active.find(m => m.id === membershipId)
+          : identity.lastOpenedMembershipId
+            ? active.find(m => m.id === identity.lastOpenedMembershipId)
+            : undefined;
+
+        if (!targetMembership && active.length === 1) {
+          targetMembership = active[0];
+        }
+
+        if (!targetMembership) {
+          // Multiple memberships, no preference — return selection list
+          const groups = await Promise.all(active.map(async m => {
+            const grp = await storage.getGroupByGroupId(m.groupId);
+            return { membershipId: m.id, groupId: m.groupId, groupName: grp?.name || m.groupId, role: m.role, village: grp?.village };
+          }));
+          return res.json({ requiresGroupSelection: true, memberships: groups });
+        }
+
+        // Issue session for the target membership's user row
+        const user = await storage.getUserById(targetMembership.userId);
+        if (!user) return res.status(401).json({ error: "invalidCredentials" });
+        await storage.updateIdentity(identity.id, { lastOpenedMembershipId: targetMembership.id });
+        const session = await storage.createSession(user.id);
+        const group = await storage.getGroupByGroupId(user.groupId);
+        const { password: _p, ...safeUser } = user;
+        return res.json({ token: session.token, user: safeUser, group });
+      }
+
+      // ── Legacy fallback for users not yet in identities table ──
       const user = await storage.getUserByPhone(phone);
       if (!user || user.password !== password) {
         return res.status(401).json({ error: "invalidCredentials" });
       }
-
       const session = await storage.createSession(user.id);
       const group = await storage.getGroupByGroupId(user.groupId);
       const { password: _p, ...safeUser } = user;
@@ -206,6 +297,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  app.post(
+    "/api/auth/change-password",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { currentPassword, newPassword, village } = req.body;
+        if (!newPassword) {
+          return res.status(400).json({ error: "Password cannot be empty" });
+        }
+        const user = await storage.getUserById(req.currentUser!.id);
+        if (!user || (currentPassword && user.password !== currentPassword)) {
+          return res.status(401).json({ error: "Invalid current password" });
+        }
+        const updateData: any = { password: newPassword };
+        if (village) updateData.village = village;
+        const updatedUser = await storage.updateUser(user.id, updateData);
+        if (!updatedUser) return res.status(500).json({ error: "Failed to update password" });
+
+        // Sync password to identity and ALL membership user rows for this phone
+        const identity = await storage.getIdentityByPhone(user.phone);
+        if (identity) {
+          await storage.updateIdentity(identity.id, { password: newPassword });
+          // Update password on all user rows belonging to this identity
+          const memberships = await storage.getMembershipsByIdentityId(identity.id);
+          for (const m of memberships) {
+            if (m.userId !== user.id) {
+              await storage.updateUser(m.userId, { password: newPassword });
+            }
+          }
+        }
+
+        const { password: _p, ...safeUser } = updatedUser;
+        return res.json({ ok: true, user: safeUser });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
 
   app.post(
     "/api/auth/logout",
@@ -227,6 +358,156 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { password: _p, ...safeUser } = user;
       return res.json({ user: safeUser, group });
     },
+  );
+
+  // ── Select membership (second step for multi-SHG login) ──────────────────
+  app.post("/api/auth/select-membership", async (req, res) => {
+    try {
+      const { phone, password, membershipId } = req.body;
+      if (!phone || !password || !membershipId) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const identity = await storage.getIdentityByPhone(phone);
+      if (!identity || identity.password !== password) {
+        return res.status(401).json({ error: "invalidCredentials" });
+      }
+      const membership = await storage.getMembershipById(membershipId);
+      if (!membership || membership.identityId !== identity.id || membership.status !== "active") {
+        return res.status(403).json({ error: "invalidMembership" });
+      }
+      const user = await storage.getUserById(membership.userId);
+      if (!user) return res.status(401).json({ error: "invalidCredentials" });
+      await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membershipId });
+      const session = await storage.createSession(user.id);
+      const group = await storage.getGroupByGroupId(user.groupId);
+      const { password: _p, ...safeUser } = user;
+      return res.json({ token: session.token, user: safeUser, group });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Switch membership (from inside the app) ───────────────────────────────
+  app.post(
+    "/api/auth/switch-membership",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { membershipId, password } = req.body;
+        if (!membershipId || !password) {
+          return res.status(400).json({ error: "Missing required fields" });
+        }
+        const currentUser = req.currentUser!;
+        const identity = await storage.getIdentityByPhone(currentUser.phone);
+        if (!identity || identity.password !== password) {
+          return res.status(401).json({ error: "invalidCredentials" });
+        }
+        const membership = await storage.getMembershipById(membershipId);
+        if (!membership || membership.identityId !== identity.id || membership.status !== "active") {
+          return res.status(403).json({ error: "invalidMembership" });
+        }
+        const targetUser = await storage.getUserById(membership.userId);
+        if (!targetUser) return res.status(401).json({ error: "invalidCredentials" });
+        // Invalidate current session
+        if (req.currentSession) {
+          await storage.deleteSession(req.currentSession.token);
+        }
+        await storage.updateIdentity(identity.id, { lastOpenedMembershipId: membershipId });
+        const session = await storage.createSession(targetUser.id);
+        const group = await storage.getGroupByGroupId(targetUser.groupId);
+        const { password: _p, ...safeUser } = targetUser;
+        return res.json({ token: session.token, user: safeUser, group });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // ── My Memberships (all groups for the current identity) ──────────────────
+  app.get(
+    "/api/auth/my-memberships",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const currentUser = req.currentUser!;
+        const identity = await storage.getIdentityByPhone(currentUser.phone);
+        if (!identity) {
+          // Legacy account: return single entry
+          const group = await storage.getGroupByGroupId(currentUser.groupId);
+          return res.json({ memberships: [{ membershipId: null, groupId: currentUser.groupId, groupName: group?.name || currentUser.groupId, role: currentUser.role, village: group?.village }] });
+        }
+        const allMemberships = await storage.getMembershipsByIdentityId(identity.id);
+        const active = allMemberships.filter(m => m.status === "active");
+        const result = await Promise.all(active.map(async m => {
+          const grp = await storage.getGroupByGroupId(m.groupId);
+          return { membershipId: m.id, groupId: m.groupId, groupName: grp?.name || m.groupId, role: m.role, village: grp?.village };
+        }));
+        return res.json({ memberships: result });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/groups/:groupId/members",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { groupId } = req.params;
+        const { name, phone, joinDate, address } = req.body;
+        
+        if (!name || !phone) return res.status(400).json({ error: "Name and phone are required" });
+        
+        const existingUsersInGroup = await storage.getUsersByGroupId(groupId);
+        if (existingUsersInGroup.some(u => u.phone === phone.trim())) {
+          return res.status(409).json({ error: "Phone number already registered" });
+        }
+
+        const group = await storage.getGroupByGroupId(groupId);
+        
+        const user = await storage.createUser({
+          name: name.trim(),
+          phone: phone.trim(),
+          password: "password123", // Default password for manually added members
+          village: address || group?.village || "",
+          joinDate: joinDate ? new Date(joinDate) : now(req),
+          role: "member",
+          groupId: groupId,
+          status: "active",
+          preferredLanguage: group?.preferredLanguage || "en",
+        });
+
+        let identity = await storage.getIdentityByPhone(phone.trim());
+        if (!identity) {
+          identity = await storage.createIdentity({
+            phone: phone.trim(),
+            password: "password123",
+            name: name.trim(),
+            village: address || group?.village || "",
+            preferredLanguage: group?.preferredLanguage || "en",
+          });
+        }
+        await storage.createMembership({
+          identityId: identity.id,
+          groupId: groupId,
+          userId: user.id,
+          role: "member",
+          status: "active",
+        });
+
+        const { password: _p, ...safeUser } = user;
+        return res.status(201).json(safeUser);
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Failed to add member" });
+      }
+    }
   );
 
   app.patch(
@@ -258,7 +539,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const members = await storage.getUsersByGroupId(groupId);
         
         const activeMembers = members.filter(m => m.status === "active").length;
-        const totalSavings = payments.filter(p => p.status === "confirmed" && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
+        const groupSettings = await storage.getGroupSettings(groupId);
+        const openingBalances = groupSettings?.openingBalances || {};
+        const openingSavings = Number(openingBalances.totalSavings) || 0;
+        const openingBalance = Number(openingBalances.currentBalance) || 0;
+
+        const totalSavings = openingSavings + payments.filter(p => p.status === "confirmed" && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
         const totalPenalties = payments.filter(p => p.status === "confirmed" && p.lateFee > 0).reduce((sum, p) => sum + p.lateFee, 0);
         
         const activeLoansCount = loans.filter(l => ["approved", "completed"].includes(l.status) && l.remainingBalance > 0).length;
@@ -267,19 +553,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const approvedLoans = loans.filter(l => ["approved", "completed"].includes(l.status));
         const totalPrincipalDisbursed = approvedLoans.reduce((sum, l) => sum + l.amount, 0);
         
-        // Exact alignment with SHG rules using ONLY snapshot fields from the Loan object
+        // Only count disbursements that occurred *in the app* (not migrated) for cash flow
+        const appDisbursedLoans = approvedLoans.filter(l => l.resolutionNo !== "MIGRATED");
+        const totalPrincipalDisbursedInApp = appDisbursedLoans.reduce((sum, l) => sum + l.amount, 0);
+        
+        // Exact alignment with SHG rules using ONLY snapshot fields from the Loan object for lifetime stats
         const principalCollected = approvedLoans.reduce((sum, l) => sum + (l.totalPrincipalPaid || 0), 0);
         const interestCollected = approvedLoans.reduce((sum, l) => sum + (l.totalInterestPaid || 0), 0);
         const outstandingPrincipal = approvedLoans.reduce((sum, l) => sum + (l.remainingBalance || 0), 0);
         const outstandingInterest = approvedLoans.reduce((sum, l) => sum + (l.outstandingInterest || 0), 0);
         
-        // For cash balance, we simply add all savings, penalties, and all principal + interest collected
-        // Note: For legacy flat loans that don't have totalPrincipalPaid, the current cash balance will be slightly off,
-        // but for new reducing balance loans it is 100% accurate.
-        // Actually, to be safe for legacy loans we can still compute totalRepayments from the ledger for cash balance.
-        const legacyTotalRepayments = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
-        const totalRepaymentsForCash = Math.max(legacyTotalRepayments, principalCollected + interestCollected);
-        const currentBalance = totalSavings + totalPenalties + totalRepaymentsForCash - totalPrincipalDisbursed;
+        // For cash balance, we add opening balances to operations IN THE APP
+        const totalRepaymentsForCash = repayments.reduce((sum, r) => sum + resolveRepaymentAmounts(r).shgAmount, 0);
+        
+        // Operational Balance generated since start
+        const operationalSavings = totalSavings - openingSavings;
+        const currentBalance = openingBalance + operationalSavings + totalPenalties + totalRepaymentsForCash - totalPrincipalDisbursedInApp;
 
         return res.json({
           totalSavings,
@@ -296,6 +585,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (e) {
         console.error(e);
         return res.status(500).json({ error: "Failed to load summary" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/groups/:groupId/opening-balances",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { groupId } = req.params;
+        const openingBalances = req.body;
+        const settings = await storage.getGroupSettings(groupId);
+        
+        settings.openingBalances = openingBalances;
+        settings.setupProgress = {
+          ...(settings.setupProgress || {}),
+          openingBalances: true
+        };
+        // ── Migration window: 30 days from the opening date the president picked
+        const openingDateStr = openingBalances.openingDate || new Date().toISOString().split("T")[0];
+        const expiry = new Date(openingDateStr);
+        expiry.setDate(expiry.getDate() + 30);
+        settings.migrationWindowExpiry = expiry.toISOString();
+        
+        await storage.updateGroupSettings(groupId, settings);
+        
+        return res.json({ success: true, settings });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Failed to save opening balances" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/groups/:groupId/setup-progress",
+    requireAuth as any,
+    requireSameGroup as any,
+    requirePresident as any,
+    async (req: AuthRequest, res) => {
+      try {
+        const { groupId } = req.params;
+        const updates = req.body;
+        const settings = await storage.getGroupSettings(groupId);
+        
+        settings.setupProgress = {
+          ...(settings.setupProgress || {}),
+          ...updates
+        };
+        
+        await storage.updateGroupSettings(groupId, settings);
+        
+        return res.json({ success: true, settings });
+      } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Failed to update setup progress" });
       }
     }
   );
@@ -369,7 +716,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
       const members = await storage.getUsersByGroupId(groupId);
-      const safe = members.map(({ password: _p, ...u }) => u);
+      const safe = members.map(({ password: _p, ...u }) => ({
+        ...u,
+        isRegistered: _p !== "password123"
+      }));
       return res.json(safe);
     },
   );
@@ -425,8 +775,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { scheduledDate, agenda, groupId } = req.body;
-      if (req.currentUser!.groupId !== groupId)
+      if (req.currentUser!.groupId !== groupId) {
+        console.error("403 Access denied: currentUser.groupId", req.currentUser!.groupId, "!= body.groupId", groupId);
         return res.status(403).json({ error: "Access denied" });
+      }
       const meeting = await storage.createMeeting({
         groupId,
         scheduledDate: new Date(scheduledDate),
@@ -479,7 +831,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (req.currentUser!.role === "treasurer" && ["scheduledDate", "agenda", "status"].includes(key)) {
              return res.status(403).json({ error: "Treasurer cannot edit meeting details" });
           }
-          updates[key] = req.body[key];
+          if (key === "scheduledDate") {
+            updates[key] = new Date(req.body[key]);
+          } else {
+            updates[key] = req.body[key];
+          }
         }
       }
       const updated = await storage.updateMeeting(meetingId, updates);
@@ -509,12 +865,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/groups/:groupId/payments",
     requireAuth as any,
-    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
       const { memberId, amount, lateFee = 0, month, mode } = req.body;
+      
+      // If user is a member, they can only submit their own payments
+      if (req.currentUser!.role === "member" && req.currentUser!.id !== memberId) {
+        return res.status(403).json({ error: "Members can only submit their own payments" });
+      }
+      
       if (!amount || amount <= 0)
         return res.status(400).json({ error: "Valid amount required" });
       if (!Number.isInteger(Number(amount)) || !Number.isInteger(Number(lateFee)) || Number(lateFee) < 0) {
@@ -534,6 +895,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!member || member.groupId !== groupId || member.status !== "active") {
         return res.status(400).json({ error: "Selected member is not active in this group" });
       }
+
+      let status = "confirmed";
+      let verifiedBy = user.id;
+      let verifiedAt = now(req);
+
+      if (user.role === "member") {
+        status = paymentMode === "online" ? "pending_verification" : "pending";
+        verifiedBy = null as any;
+        verifiedAt = null as any;
+      }
+
       const payment = await storage.createPayment({
         groupId,
         memberId: member.id,
@@ -545,9 +917,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueDate: null,
         date: now(req),
         mode: paymentMode,
-        status: "confirmed",
-        verifiedBy: user.id,
-        verifiedAt: now(req),
+        status: status as any,
+        verifiedBy,
+        verifiedAt,
       });
       return res.status(201).json(payment);
     },
@@ -811,13 +1183,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-
-      // ── Role guard: only president or treasurer may create loans ──────────
       const caller = req.currentUser!;
-      if (caller.role !== "president" && caller.role !== "treasurer")
-        return res.status(403).json({ error: "Only the President or Treasurer can create loans" });
 
-      const { amount, duration, memberId, memberName, startDate } = req.body;
+
+      const { amount, duration, memberId, memberName, startDate, isExisting, isCompleted, outstandingPrincipal, loanDate } = req.body;
       if (!amount || !duration)
         return res.status(400).json({ error: "Amount and duration required" });
 
@@ -835,9 +1204,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const settings = await storage.getGroupSettings(groupId);
 
+      // Gate migration-mode entries to within the 30-day window
+      if (isExisting) {
+        const expiry = settings?.migrationWindowExpiry;
+        if (!expiry || new Date() > new Date(expiry)) {
+          return res.status(403).json({ error: "migrationWindowExpired" });
+        }
+      }
+
       // Validate SHG amount
       if (amount <= 0) return res.status(400).json({ error: "invalidAmount" });
-      if (amount > settings.maxLoanAmount)
+      if (!isExisting && amount > settings.maxLoanAmount)
         return res.status(400).json({ error: "exceedsMaxLoan" });
 
       // Validate SHG duration
@@ -852,28 +1229,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "durationTooLong" });
 
       const group = await storage.getGroupByGroupId(groupId);
-      const initialStatus = group?.treasurerId
-        ? "pending_treasurer"
-        : "pending_president";
+
+      let initialStatus = group?.treasurerId ? "pending_treasurer" : "pending_president";
 
       const principal = Number(amount);
       const rate = settings.interestRate;
       const dur = Number(duration);
-      const totalInterest = Math.round(principal * (rate / 100) * dur);
+      const totalInterest = Math.round((principal * (rate / 100) * (dur + 1)) / 2);
       const totalRepayable = principal + totalInterest;
-      const method = "reducing_balance"; // Default new loans to reducing balance
+      const method = "reducing_balance"; 
+      
+      let remainingBal = method === "reducing_balance" ? principal : totalRepayable;
+      let totalPrincipalAlreadyPaid = 0;
+      if (isExisting) {
+        initialStatus = "approved";
+        if (isCompleted) {
+          // Historical fully-repaid loan — records only, no ledger impact
+          initialStatus = "completed";
+          remainingBal = 0;
+          totalPrincipalAlreadyPaid = principal;
+        } else {
+          remainingBal = Number(outstandingPrincipal) || principal;
+          totalPrincipalAlreadyPaid = principal - remainingBal;
+        }
+      }
 
       const loan = await storage.createLoan({
         groupId,
         memberId: targetMemberId,
         memberName: targetMemberName,
-        resolutionNo: "",
+        resolutionNo: isExisting ? "MIGRATED" : "",
         amount: principal,
         interest: rate,
         duration: dur,
         startDate: startDate ?? null,  // Display-only; does not affect loan_ledger
         status: initialStatus,
-        createdAt: now(req),
+        createdAt: isExisting && loanDate ? new Date(loanDate) : now(req),
         hasBankLoan: false,
         bankId: undefined,
         bankName: undefined,
@@ -883,8 +1274,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         bankRemainingBalance: undefined,
         bankLoanRemarks: undefined,
         calculationMethod: method,
-        remainingBalance: method === "reducing_balance" ? principal : totalRepayable,
-        totalPrincipalPaid: 0,
+        remainingBalance: remainingBal,
+        totalPrincipalPaid: totalPrincipalAlreadyPaid,
         totalInterestPaid: 0,
         outstandingInterest: 0,
       } as any);
@@ -1298,8 +1689,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // ─── Loan Payment Claims ──────────────────────────────────────────────────────
+  // POST /api/loans/:loanId/claims  — Member submits a payment claim
+  app.post(
+    "/api/loans/:loanId/claims",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      const { loanId } = req.params;
+      const { amount, mode, remarks } = req.body;
+
+      const loan = await storage.getLoanById(loanId);
+      if (!loan || loan.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Loan not found" });
+
+      // Members can only claim for their own loan
+      if (req.currentUser!.role === "member" && loan.memberId !== req.currentUser!.id)
+        return res.status(403).json({ error: "You can only submit claims for your own loans." });
+
+      if (loan.status !== "approved")
+        return res.status(400).json({ error: "Claims can only be submitted for active loans." });
+
+      const numAmount = Number(amount);
+      if (!numAmount || numAmount <= 0)
+        return res.status(400).json({ error: "Valid amount required." });
+
+      const claim = await storage.createLoanClaim({
+        groupId: req.currentUser!.groupId,
+        loanId,
+        memberId: req.currentUser!.id,
+        memberName: req.currentUser!.name,
+        amount: numAmount,
+        mode: mode || "cash",
+        status: "pending",
+        remarks: remarks?.trim() || null,
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+      });
+      return res.status(201).json(claim);
+    },
+  );
+
+  // GET /api/loans/:loanId/claims  — Get claims for a specific loan
+  app.get(
+    "/api/loans/:loanId/claims",
+    requireAuth as any,
+    async (req: AuthRequest, res) => {
+      const { loanId } = req.params;
+      const loan = await storage.getLoanById(loanId);
+      if (!loan || loan.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Loan not found" });
+      // Members can only see claims for their own loan
+      if (req.currentUser!.role === "member" && loan.memberId !== req.currentUser!.id)
+        return res.status(403).json({ error: "Access denied." });
+      const claims = await storage.getClaimsByLoanId(loanId);
+      return res.json(claims);
+    },
+  );
+
+  // GET /api/groups/:groupId/loan-claims  — President/Treasurer sees all pending claims
+  app.get(
+    "/api/groups/:groupId/loan-claims",
+    requireAuth as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { groupId } = req.params;
+      if (req.currentUser!.groupId !== groupId)
+        return res.status(403).json({ error: "Access denied" });
+      const claims = await storage.getClaimsByGroupId(groupId);
+      return res.json(claims);
+    },
+  );
+
+  // POST /api/loan-claims/:id/approve  — President/Treasurer approves
+  app.post(
+    "/api/loan-claims/:id/approve",
+    requireAuth as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { id } = req.params;
+      const claim = await storage.getClaimById(id);
+      if (!claim || claim.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Claim not found" });
+      if (claim.status !== "pending")
+        return res.status(400).json({ error: "Claim is already resolved." });
+
+      const loan = await storage.getLoanById(claim.loanId);
+      if (!loan) return res.status(404).json({ error: "Loan not found" });
+
+      // Mark the claim approved first
+      await storage.updateLoanClaim(id, {
+        status: "approved",
+        reviewedBy: req.currentUser!.id,
+        reviewedAt: new Date() as any,
+      });
+
+      // Now create the official repayment using the frozen recordLoanRepayment logic
+      const result = await storage.recordLoanRepayment(
+        claim.loanId,
+        {
+          amount: claim.amount,
+          shgAmount: claim.amount,
+          bankAmount: 0,
+          date: new Date().toISOString(),
+          recordedBy: req.currentUser!.id,
+          remarks: `Payment claim approved. Mode: ${claim.mode}`,
+        },
+        'due' // default unpaid interest policy
+      );
+      const repayment = result.repayment;
+
+      const updatedLoan = await storage.getLoanById(claim.loanId);
+      return res.json({ success: true, repayment, loan: updatedLoan });
+    },
+  );
+
+  // POST /api/loan-claims/:id/reject  — President/Treasurer rejects
+  app.post(
+    "/api/loan-claims/:id/reject",
+    requireAuth as any,
+    requirePresidentOrTreasurer as any,
+    async (req: AuthRequest, res) => {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const claim = await storage.getClaimById(id);
+      if (!claim || claim.groupId !== req.currentUser!.groupId)
+        return res.status(404).json({ error: "Claim not found" });
+      if (claim.status !== "pending")
+        return res.status(400).json({ error: "Claim is already resolved." });
+
+      const updated = await storage.updateLoanClaim(id, {
+        status: "rejected",
+        reviewedBy: req.currentUser!.id,
+        reviewedAt: new Date() as any,
+        rejectionReason: reason?.trim() || null,
+      });
+      return res.json(updated);
+    },
+  );
+
   app.get(
     "/api/groups/:groupId/repayments",
+
     requireAuth as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;
@@ -1337,20 +1868,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const { interestRate, maxLoanAmount, durationRules } = req.body;
-      if (
-        interestRate === undefined ||
-        maxLoanAmount === undefined ||
-        !durationRules
-      ) {
-        return res.status(400).json({ error: "Missing settings fields" });
+      
+      try {
+        const existingSettings = await storage.getGroupSettings(groupId);
+        const newSettings = { ...existingSettings, ...req.body };
+        await storage.updateGroupSettings(groupId, newSettings);
+        return res.json({ ok: true });
+      } catch (e) {
+        return res.status(500).json({ error: "Failed to update settings" });
       }
-      await storage.updateGroupSettings(groupId, {
-        interestRate,
-        maxLoanAmount,
-        durationRules,
-      });
-      return res.json({ ok: true });
     },
   );
 
@@ -1519,15 +2045,24 @@ Reply with ONLY a JSON object, no markdown, no explanation:
   app.post(
     "/api/groups/:groupId/bank-loans",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { groupId } = req.params;
       if (req.currentUser!.groupId !== groupId)
         return res.status(403).json({ error: "Access denied" });
-      const { bankName, branch, accountNumber, ifscCode, sanctionDate, repaymentStartDate, amount, annualInterestRate, durationMonths, remarks } = req.body;
+      const { bankName, branch, accountNumber, ifscCode, sanctionDate, repaymentStartDate, amount, annualInterestRate, durationMonths, remarks, isExisting, isCompleted } = req.body;
       if (!bankName || !amount || !annualInterestRate || !durationMonths || !sanctionDate) {
         return res.status(400).json({ error: "Missing required fields" });
       }
+      // Gate migration-mode entries to within the 30-day window
+      if (isExisting) {
+        const gs = await storage.getGroupSettings(groupId);
+        const expiry = gs?.migrationWindowExpiry;
+        if (!expiry || new Date() > new Date(expiry)) {
+          return res.status(403).json({ error: "migrationWindowExpired" });
+        }
+      }
+      const loanStatus = isExisting && isCompleted ? "completed" : "active";
       const loan = await storage.createGroupBankLoan({
         groupId,
         bankName,
@@ -1540,7 +2075,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
         annualInterestRate: Number(annualInterestRate),
         durationMonths: Number(durationMonths),
         remarks: remarks || null,
-        status: "active",
+        status: loanStatus,
         createdBy: req.currentUser!.id,
       });
       return res.status(201).json(loan);
@@ -1551,7 +2086,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
   app.patch(
     "/api/bank-loans/:id",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { id } = req.params;
       const bankLoan = await storage.getGroupBankLoanById(id);
@@ -1569,7 +2104,7 @@ Reply with ONLY a JSON object, no markdown, no explanation:
   app.delete(
     "/api/bank-loans/:id",
     requireAuth as any,
-    requirePresident as any,
+    requirePresidentOrTreasurer as any,
     async (req: AuthRequest, res) => {
       const { id } = req.params;
       const bankLoan = await storage.getGroupBankLoanById(id);

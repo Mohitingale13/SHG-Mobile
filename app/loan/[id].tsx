@@ -32,14 +32,16 @@ type DialogType = "approveTreasurer" | "rejectTreasurer" | "rejectPresident" | "
 export default function LoanDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const { group, isPresident, isTreasurer } = useAuth();
+  const { user, group, isPresident, isTreasurer } = useAuth();
   const { t } = useLanguage();
   const [showQrModal, setShowQrModal] = useState(false);
   const {
-    loans, loanRepayments, groupMembers, groupSummary,
+    loans, loanRepayments, loanClaims = [], groupMembers, groupSummary,
     treasurerApproveLoan, treasurerRejectLoan,
     approveLoan, rejectLoan,
     addRepayment, deleteRepayment, deleteLoan,
+    submitLoanClaim, approveLoanClaim, rejectLoanClaim,
+    isMigrationWindow,
   } = useData();
   const loan = loans.find((l) => l.id === id);
 
@@ -56,10 +58,16 @@ export default function LoanDetailScreen() {
   const [repayAmount, setRepayAmount] = useState("");
   const [repayDate, setRepayDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [showRepay, setShowRepay] = useState(false);
+  const [showClaimForm, setShowClaimForm] = useState(false);
+  const [claimMode, setClaimMode] = useState<'online'|'cash'>('online');
+  const [claimRemarks, setClaimRemarks] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
+  const [isApproving, setIsApproving] = useState(false);
   const [dialog, setDialog] = useState<DialogType>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [deleteRepaymentId, setDeleteRepaymentId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [resolutionError, setResolutionError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const repaymentSubmittingRef = useRef(false);
@@ -137,10 +145,13 @@ export default function LoanDetailScreen() {
         return;
       }
       setResolutionError(false);
+      setIsApproving(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await approveLoan(loan.id, resolutionNo.trim());
     } catch (e: any) {
       Alert.alert(t("error"), e.message || t("error"));
+    } finally {
+      setIsApproving(false);
     }
   };
 
@@ -187,6 +198,47 @@ export default function LoanDetailScreen() {
     }
   };
 
+  const handleClaimSubmit = async () => {
+    const amt = Number(claimAmount);
+    if (!claimAmount || isNaN(amt) || amt <= 0) {
+      Alert.alert(t('error'), t('auto.please_enter_a_valid_amo') || 'Please enter a valid amount');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await submitLoanClaim(loan.id, { amount: amt, mode: claimMode, remarks: claimRemarks });
+      Alert.alert(t('auto.payment_claim_submitted_') || 'Payment submitted', t('auto.payment_claim_submitted_') || 'Your payment claim has been submitted and is awaiting approval.');
+      setShowClaimForm(false);
+      setClaimAmount('');
+      setClaimRemarks('');
+    } catch (e: any) {
+      Alert.alert(t('error'), e.message || t('error'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleApproveClaim = async (claimId: string) => {
+    setIsApproving(true);
+    try {
+      await approveLoanClaim(claimId);
+    } catch (e: any) {
+      Alert.alert(t('error'), e.message || t('error'));
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleRejectClaim = async (claimId: string) => {
+    try {
+      await rejectLoanClaim(claimId, 'Rejected by president');
+    } catch (e: any) {
+      Alert.alert(t('error'), e.message || t('error'));
+    }
+  };
+
+  const pendingClaims = loanClaims.filter((c: any) => c.loanId === loan.id && c.status === 'pending');
+
   const handleDeleteRepayment = async () => {
     try {
       if (!deleteRepaymentId) return;
@@ -200,12 +252,14 @@ export default function LoanDetailScreen() {
 
   const handleDeleteLoan = async () => {
     try {
+      setIsDeleting(true);
       setDialog(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await deleteLoan(loan.id);
       router.back();
     } catch (e: any) {
       Alert.alert(t("error"), e.message || t("error"));
+      setIsDeleting(false);
     }
   };
 
@@ -233,7 +287,7 @@ export default function LoanDetailScreen() {
         style={styles.container}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12, paddingBottom: insets.bottom + 40 },
+          { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12, paddingBottom: insets.bottom + 40 },
         ]}
       >
         <View style={styles.header}>
@@ -241,7 +295,9 @@ export default function LoanDetailScreen() {
             <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
           </Pressable>
           <Text style={styles.headerTitle}>{t("loanDetails")}</Text>
-          <View style={{ width: 24 }} />
+          <Pressable onPress={handleExportPassbook}>
+            <Ionicons name="download-outline" size={24} color={Colors.light.primary} />
+          </Pressable>
         </View>
 
         <View style={[styles.statusBanner, { backgroundColor: color + "18" }]}>
@@ -400,6 +456,293 @@ export default function LoanDetailScreen() {
         )}
 
 
+        {showRepayment && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{t("repayment")}</Text>
+              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                {isPresident && (loan.status === "approved" || loan.status === "completed") && (
+                  <Pressable onPress={() => {
+                    if (!showRepay) setRepayDate(new Date().toISOString().split("T")[0]);
+                    setShowRepay(!showRepay);
+                    setShowClaimForm(false);
+                  }}>
+                    <Ionicons name={showRepay ? "close" : "add-circle"} size={24} color={Colors.light.primary} />
+                  </Pressable>
+                )}
+                {user?.id === loan.memberId && loan.status === "approved" && (
+                  <Pressable
+                    style={[styles.makePaymentBtn, showClaimForm && { backgroundColor: Colors.light.danger }]}
+                    onPress={() => { setShowClaimForm(!showClaimForm); setShowRepay(false); }}
+                  >
+                    <Text style={styles.makePaymentBtnText}>{showClaimForm ? (t('cancel') || 'Cancel') : (t('make_payment') || 'Make Payment')}</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+
+            {showClaimForm && (
+              <View style={styles.repayInput}>
+                <View style={styles.inputRow}>
+                  <Text style={styles.rupee}>Rs.</Text>
+                  <TextInput
+                    style={styles.repayField}
+                    value={claimAmount}
+                    onChangeText={setClaimAmount}
+                    placeholder="0"
+                    placeholderTextColor={Colors.light.textMuted}
+                    keyboardType="number-pad"
+                    autoFocus
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10, marginVertical: 12 }}>
+                  <Pressable
+                    style={[styles.modeBtn, claimMode === 'online' && styles.modeBtnActive]}
+                    onPress={() => setClaimMode('online')}>
+                    <Ionicons name="phone-portrait-outline" size={18} color={claimMode === 'online' ? '#fff' : Colors.light.primary} />
+                    <Text style={[styles.modeBtnText, claimMode === 'online' && { color: '#fff' }]}>{t('online') || 'Online'}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.modeBtn, claimMode === 'cash' && styles.modeBtnActive]}
+                    onPress={() => setClaimMode('cash')}>
+                    <Ionicons name="cash-outline" size={18} color={claimMode === 'cash' ? '#fff' : Colors.light.primary} />
+                    <Text style={[styles.modeBtnText, claimMode === 'cash' && { color: '#fff' }]}>{t('cash') || 'Cash'}</Text>
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  style={[styles.repayField, { borderWidth: 1, borderColor: Colors.light.border, borderRadius: 10, paddingHorizontal: 12, minHeight: 44, marginBottom: 12 }]}
+                  value={claimRemarks}
+                  onChangeText={setClaimRemarks}
+                  placeholder={t('remarks') || 'Remarks (optional)'}
+                  placeholderTextColor={Colors.light.textMuted}
+                />
+
+                <Pressable
+                  style={[styles.submitClaimBtn, isSubmitting && styles.repayBtnDisabled]}
+                  onPress={handleClaimSubmit}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.submitClaimText}>{t('submit_payment') || 'Submit Payment'}</Text>}
+                </Pressable>
+
+                {claimMode === 'online' && !!group?.qrCode && (
+                  <Pressable style={{ marginTop: 12, alignItems: 'center' }} onPress={() => setShowQrModal(true)}>
+                    <Text style={{ color: Colors.light.primary, fontFamily: 'Poppins_600SemiBold', fontSize: 14 }}>{t('view_group_qr') || 'View Group QR to Pay'}</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {pendingClaims.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={[styles.sectionTitle, { fontSize: 13, color: Colors.light.textSecondary, marginBottom: 8, marginHorizontal: 16 }]}>{t('pending_payments') || 'Pending Payments'}</Text>
+                {pendingClaims.map((claim: any) => (
+                  <View key={claim.id} style={[styles.claimItem]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.claimAmount}>Rs. {claim.amount?.toLocaleString('en-IN')}</Text>
+                      <Text style={styles.claimMeta}>{claim.mode === 'online' ? 'Online' : 'Cash'} • {new Date(claim.createdAt).toLocaleDateString('en-IN')}</Text>
+                      {claim.remarks ? <Text style={styles.claimRemarks}>"{claim.remarks}"</Text> : null}
+                    </View>
+                    <View style={styles.claimActions}>
+                      {isPresident ? (
+                        <>
+                          <Pressable style={[styles.claimApproveBtn, isApproving && { opacity: 0.5 }]} onPress={() => handleApproveClaim(claim.id)} disabled={isApproving}>
+                            {isApproving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={16} color="#fff" />}
+                          </Pressable>
+                          <Pressable style={styles.claimRejectBtn} onPress={() => handleRejectClaim(claim.id)}>
+                            <Ionicons name="close" size={16} color={Colors.light.danger} />
+                          </Pressable>
+                        </>
+                      ) : (
+                        <View style={styles.claimPendingBadge}>
+                          <Text style={styles.claimPendingText}>{t('pending') || 'Pending'}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {showRepay && (
+              <View style={styles.repayInput}>
+                <View style={styles.inputRow}>
+                  <Text style={styles.rupee}>Rs.</Text>
+                  <TextInput
+                    style={styles.repayField}
+                    value={repayAmount}
+                    onChangeText={setRepayAmount}
+                    placeholder="0"
+                    placeholderTextColor={Colors.light.textMuted}
+                    keyboardType="number-pad"
+                    autoFocus
+                  />
+                  <Pressable
+                    style={[styles.repayBtn, isSubmitting && styles.repayBtnDisabled]}
+                    onPress={handleRepay}
+                    disabled={isSubmitting}
+                    accessibilityLabel={isSubmitting ? "Saving repayment" : "Save repayment"}
+                  >
+                    {isSubmitting
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Ionicons name="checkmark" size={20} color="#fff" />}
+                  </Pressable>
+                </View>
+                {isMigrationWindow && (
+                  <View style={styles.repaymentDateField}>
+                    <Text style={styles.repaymentDateLabel}>{t("date")}</Text>
+                    <SHGDatePicker mode="date" value={repayDate} onSelect={setRepayDate} />
+                  </View>
+                )}
+                {loan.calculationMethod === "reducing_balance" && repaymentPreview && previewRepayAmount > 0 && (
+                  <View style={[styles.amountCard, { marginTop: 12, backgroundColor: Colors.light.card, borderColor: Colors.light.primary, borderWidth: 1 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <Ionicons name="eye" size={18} color={Colors.light.primary} />
+                      <Text style={[styles.amountLabel, { marginBottom: 0, fontSize: 13 }]}>{t("repayment_summary")}</Text>
+                    </View>
+                    
+                    <View style={styles.formulaBox}>
+                      <Text style={styles.formulaLabel}>{t("payment_entered")}</Text>
+                      <Text style={styles.formulaValue}>Rs. {previewRepayAmount.toLocaleString("en-IN")}</Text>
+                    </View>
+                    <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
+                    
+                    <View style={styles.formulaBox}>
+                      <Text style={styles.formulaLabel}>{t("interest_paid_label")}</Text>
+                      <Text style={styles.formulaValue}>Rs. {repaymentPreview.interestPaid.toLocaleString("en-IN")}</Text>
+                    </View>
+                    {(repaymentPreview.outstandingInterest > 0) && (
+                      <>
+                        <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
+                        <View style={[styles.formulaBox, { backgroundColor: '#FEF2F2' }]}>
+                          <Text style={[styles.formulaLabel, { color: Colors.light.danger }]}>{t("outstanding_interest_remaining")}</Text>
+                          <Text style={[styles.formulaValue, { color: Colors.light.danger }]}>Rs. {repaymentPreview.outstandingInterest.toLocaleString("en-IN")}</Text>
+                        </View>
+                      </>
+                    )}
+                    <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
+                    
+                    <View style={styles.formulaBox}>
+                      <Text style={styles.formulaLabel}>{t("principal_paid_label")}</Text>
+                      <Text style={styles.formulaValue}>Rs. {repaymentPreview.principalPaid.toLocaleString("en-IN")}</Text>
+                    </View>
+                    <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
+                    
+                    <View style={[styles.formulaHighlight, { backgroundColor: Colors.light.primary + '10' }]}>
+                      <Text style={[styles.formulaLabelHighlight, { color: Colors.light.primary }]}>{t("new_remaining_principal")}</Text>
+                      <Text style={[styles.formulaResult, { color: Colors.light.primary }]}>Rs. {repaymentPreview.closingPrincipal.toLocaleString("en-IN")}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {displayEntries.length === 0 ? (
+              <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                <Ionicons name="document-outline" size={32} color={Colors.light.textMuted} />
+                <Text style={{ color: Colors.light.textMuted, marginTop: 8 }}>{t("auto.no_repayments_yet")}</Text>
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator>
+                <View>
+                  {/* Table Header */}
+                  <View style={[styles.tableRow, styles.tableHeader]}>
+                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 90 }]}>{t("date") || "Date"}</Text>
+                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("receipt_no") || "Receipt No."}</Text>}
+                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("particulars") || "Particulars"}</Text>
+                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("opening_principal") || "Opening Prin."}</Text>}
+                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("interest_charged") || "Int. Charged"}</Text>}
+                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("interest_paid_label") || "Int. Paid"}</Text>}
+                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("principal_paid_label") || "Prin. Paid"}</Text>}
+                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("total_payment") || "Total Payment"}</Text>
+                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("closing_principal") || "Closing Prin."}</Text>
+                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 130 }]}>{t("outstanding_interest") || "Outs. Int."}</Text>}
+                  </View>
+
+                  {/* Table Rows */}
+                  {displayEntries.map((r, idx) => {
+                    const isDisb = isReducingBalance && r.type === "disbursement";
+                    return (
+                      <View key={r.id || idx} style={[styles.tableRow, isDisb && { backgroundColor: Colors.light.success + "12" }, idx % 2 === 1 && !isDisb && { backgroundColor: Colors.light.inputBg }]}>
+                        <Text style={[styles.tableCell, { width: 90 }]}>{new Date(isReducingBalance ? r.date : r.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</Text>
+                        
+                        {isReducingBalance && (
+                          <Text style={[styles.tableCell, { width: 110, color: Colors.light.primary }]}>{isDisb ? "-" : r.receiptNo || "-"}</Text>
+                        )}
+                        
+                        <Text style={[styles.tableCell, { width: 120, fontFamily: "Poppins_500Medium" }]}>
+                          {isReducingBalance ? (isDisb ? t("ledger_loan_disbursed") || "Loan Disbursed" : t("ledger_repayment") || "Repayment") : "Repayment"}
+                        </Text>
+                        
+                        {isReducingBalance && (
+                          <>
+                            <Text style={[styles.tableCell, { width: 120 }]}>{r.openingPrincipal?.toLocaleString("en-IN") || "-"}</Text>
+                            <Text style={[styles.tableCell, { width: 110 }]}>{r.interestCharged?.toLocaleString("en-IN") || "-"}</Text>
+                            <Text style={[styles.tableCell, { width: 110 }]}>{r.interestPaid?.toLocaleString("en-IN") || "-"}</Text>
+                            <Text style={[styles.tableCell, { width: 110 }]}>{r.principalPaid?.toLocaleString("en-IN") || "-"}</Text>
+                          </>
+                        )}
+
+                        <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_600SemiBold" }]}>
+                          {isReducingBalance ? (r.paymentReceived?.toLocaleString("en-IN") || "-") : r.amount?.toLocaleString("en-IN")}
+                        </Text>
+                        
+                        <Text style={[styles.tableCell, { width: 120, color: (isReducingBalance ? r.closingPrincipal : r.runRem) > 0 ? Colors.light.danger : Colors.light.success, fontFamily: "Poppins_600SemiBold" }]}>
+                          {isReducingBalance ? r.closingPrincipal?.toLocaleString("en-IN") : r.runRem?.toLocaleString("en-IN")}
+                        </Text>
+
+                        {isReducingBalance && (
+                          <Text style={[styles.tableCell, { width: 130, color: r.outstandingInterest > 0 ? Colors.light.danger : Colors.light.success }]}>
+                            {r.outstandingInterest?.toLocaleString("en-IN") || "0"}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+
+                  {/* Settlement Summary Footer */}
+                  {loan.status === "completed" && (
+                    <View style={[styles.tableRow, { backgroundColor: Colors.light.primary + "20", borderTopWidth: 2, borderTopColor: Colors.light.primary }]}>
+                       <Text style={[styles.tableCell, { width: isReducingBalance ? 90 + 110 + 120 + 120 + 110 : 90 + 120, fontFamily: "Poppins_700Bold" }]}>{t("bank_loan.total") || "Total"}</Text>
+                       {isReducingBalance && (
+                         <>
+                           <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_700Bold" }]}>{(loan.totalInterestPaid || 0).toLocaleString("en-IN")}</Text>
+                           <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_700Bold" }]}>{(loan.totalPrincipalPaid || 0).toLocaleString("en-IN")}</Text>
+                         </>
+                       )}
+                       <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_700Bold" }]}>
+                         {isReducingBalance ? ((loan.totalPrincipalPaid || 0) + (loan.totalInterestPaid || 0)).toLocaleString("en-IN") : totalRepaid.toLocaleString("en-IN")}
+                       </Text>
+                       <Text style={[styles.tableCell, { width: 120, fontFamily: "Poppins_700Bold" }]}>0</Text>
+                       {isReducingBalance && <Text style={[styles.tableCell, { width: 130, fontFamily: "Poppins_700Bold" }]}>0</Text>}
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+            )}
+
+            {/* Final Settlement Display if Completed */}
+            {loan.status === "completed" && (
+              <View style={{ marginTop: 24, backgroundColor: Colors.light.success + "15", padding: 16, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.success + "50" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <Ionicons name="checkmark-done-circle" size={24} color={Colors.light.success} />
+                  <Text style={{ fontFamily: "Poppins_700Bold", fontSize: 16, color: Colors.light.success }}>{t("fully_repaid") || "Fully Repaid & Settled"}</Text>
+                </View>
+                <View style={{ gap: 8 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary }}>{t("loanAmount") || "Loan Amount"}</Text><Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.text }}>Rs. {loan.amount.toLocaleString("en-IN")}</Text></View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary }}>{t("total_principal_paid") || "Total Principal Paid"}</Text><Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.text }}>Rs. {(loan.totalPrincipalPaid || loan.amount).toLocaleString("en-IN")}</Text></View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary }}>{t("total_interest_paid") || "Total Interest Paid"}</Text><Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.text }}>Rs. {(loan.totalInterestPaid || 0).toLocaleString("en-IN")}</Text></View>
+                  <View style={{ borderTopWidth: 1, borderTopColor: Colors.light.border, marginVertical: 4 }} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_700Bold", color: Colors.light.text }}>{t("total_amount_repaid") || "Total Amount Repaid"}</Text><Text style={{ fontFamily: "Poppins_700Bold", color: Colors.light.primary }}>Rs. {isReducingBalance ? ((loan.totalPrincipalPaid || 0) + (loan.totalInterestPaid || 0)).toLocaleString("en-IN") : totalRepaid.toLocaleString("en-IN")}</Text></View>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
         {(loan.status === "rejected" || loan.status === "treasurer_rejected") && (
           <View style={styles.rejectionBox}>
             <Text style={styles.rejectionLabel}>{t("rejection_reason")}:</Text>
@@ -560,11 +903,17 @@ export default function LoanDetailScreen() {
               </Text>
             )}
             <View style={styles.approvalButtons}>
-              <Pressable style={[styles.approveBtn, { backgroundColor: Colors.light.primary }]} onPress={handleApprove}>
-                <Ionicons name="checkmark" size={18} color="#fff" />
-                <Text style={styles.approveBtnText}>
-                  {loan.status === "pending_treasurer" ? t("direct_approve") : t("approve")}
-                </Text>
+              <Pressable style={[styles.approveBtn, { backgroundColor: Colors.light.primary }, isApproving && { opacity: 0.7 }]} onPress={handleApprove} disabled={isApproving}>
+                {isApproving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.approveBtnText}>
+                      {loan.status === "pending_treasurer" ? t("direct_approve") : t("approve")}
+                    </Text>
+                  </>
+                )}
               </Pressable>
               <Pressable style={styles.rejectBtn} onPress={() => setDialog("rejectPresident")}>
                 <Ionicons name="close" size={18} color={Colors.light.danger} />
@@ -576,193 +925,6 @@ export default function LoanDetailScreen() {
           </View>
         )}
 
-        {showRepayment && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{t("repayment")}</Text>
-              {isPresident && (loan.status === "approved" || loan.status === "completed") && (
-                <Pressable onPress={() => {
-                  if (!showRepay) setRepayDate(new Date().toISOString().split("T")[0]);
-                  setShowRepay(!showRepay);
-                }}>
-                  <Ionicons name={showRepay ? "close" : "add-circle"} size={24} color={Colors.light.primary} />
-                </Pressable>
-              )}
-            </View>
-
-            {showRepay && (
-              <View style={styles.repayInput}>
-                <View style={styles.inputRow}>
-                  <Text style={styles.rupee}>Rs.</Text>
-                  <TextInput
-                    style={styles.repayField}
-                    value={repayAmount}
-                    onChangeText={setRepayAmount}
-                    placeholder="0"
-                    placeholderTextColor={Colors.light.textMuted}
-                    keyboardType="number-pad"
-                    autoFocus
-                  />
-                  <Pressable
-                    style={[styles.repayBtn, isSubmitting && styles.repayBtnDisabled]}
-                    onPress={handleRepay}
-                    disabled={isSubmitting}
-                    accessibilityLabel={isSubmitting ? "Saving repayment" : "Save repayment"}
-                  >
-                    {isSubmitting
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Ionicons name="checkmark" size={20} color="#fff" />}
-                  </Pressable>
-                </View>
-                <View style={styles.repaymentDateField}>
-                  <Text style={styles.repaymentDateLabel}>{t("date")}</Text>
-                  <SHGDatePicker mode="date" value={repayDate} onSelect={setRepayDate} />
-                </View>
-                {loan.calculationMethod === "reducing_balance" && repaymentPreview && previewRepayAmount > 0 && (
-                  <View style={[styles.amountCard, { marginTop: 12, backgroundColor: Colors.light.card, borderColor: Colors.light.primary, borderWidth: 1 }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <Ionicons name="eye" size={18} color={Colors.light.primary} />
-                      <Text style={[styles.amountLabel, { marginBottom: 0, fontSize: 13 }]}>{t("repayment_summary")}</Text>
-                    </View>
-                    
-                    <View style={styles.formulaBox}>
-                      <Text style={styles.formulaLabel}>{t("payment_entered")}</Text>
-                      <Text style={styles.formulaValue}>Rs. {previewRepayAmount.toLocaleString("en-IN")}</Text>
-                    </View>
-                    <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
-                    
-                    <View style={styles.formulaBox}>
-                      <Text style={styles.formulaLabel}>{t("interest_paid_label")}</Text>
-                      <Text style={styles.formulaValue}>Rs. {repaymentPreview.interestPaid.toLocaleString("en-IN")}</Text>
-                    </View>
-                    {(repaymentPreview.outstandingInterest > 0) && (
-                      <>
-                        <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
-                        <View style={[styles.formulaBox, { backgroundColor: '#FEF2F2' }]}>
-                          <Text style={[styles.formulaLabel, { color: Colors.light.danger }]}>{t("outstanding_interest_remaining")}</Text>
-                          <Text style={[styles.formulaValue, { color: Colors.light.danger }]}>Rs. {repaymentPreview.outstandingInterest.toLocaleString("en-IN")}</Text>
-                        </View>
-                      </>
-                    )}
-                    <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
-                    
-                    <View style={styles.formulaBox}>
-                      <Text style={styles.formulaLabel}>{t("principal_paid_label")}</Text>
-                      <Text style={styles.formulaValue}>Rs. {repaymentPreview.principalPaid.toLocaleString("en-IN")}</Text>
-                    </View>
-                    <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}><Ionicons name="arrow-down" size={16} color={Colors.light.textMuted} /></View>
-                    
-                    <View style={[styles.formulaHighlight, { backgroundColor: Colors.light.primary + '10' }]}>
-                      <Text style={[styles.formulaLabelHighlight, { color: Colors.light.primary }]}>{t("new_remaining_principal")}</Text>
-                      <Text style={[styles.formulaResult, { color: Colors.light.primary }]}>Rs. {repaymentPreview.closingPrincipal.toLocaleString("en-IN")}</Text>
-                    </View>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {displayEntries.length === 0 ? (
-              <View style={{ alignItems: "center", paddingVertical: 32 }}>
-                <Ionicons name="document-outline" size={32} color={Colors.light.textMuted} />
-                <Text style={{ color: Colors.light.textMuted, marginTop: 8 }}>{t("auto.no_repayments_yet")}</Text>
-              </View>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator>
-                <View>
-                  {/* Table Header */}
-                  <View style={[styles.tableRow, styles.tableHeader]}>
-                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 90 }]}>{t("date") || "Date"}</Text>
-                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("receipt_no") || "Receipt No."}</Text>}
-                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("particulars") || "Particulars"}</Text>
-                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("opening_principal") || "Opening Prin."}</Text>}
-                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("interest_charged") || "Int. Charged"}</Text>}
-                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("interest_paid_label") || "Int. Paid"}</Text>}
-                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("principal_paid_label") || "Prin. Paid"}</Text>}
-                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 110 }]}>{t("total_payment") || "Total Payment"}</Text>
-                    <Text style={[styles.tableCell, styles.tableHeaderText, { width: 120 }]}>{t("closing_principal") || "Closing Prin."}</Text>
-                    {isReducingBalance && <Text style={[styles.tableCell, styles.tableHeaderText, { width: 130 }]}>{t("outstanding_interest") || "Outs. Int."}</Text>}
-                  </View>
-
-                  {/* Table Rows */}
-                  {displayEntries.map((r, idx) => {
-                    const isDisb = isReducingBalance && r.type === "disbursement";
-                    return (
-                      <View key={r.id || idx} style={[styles.tableRow, isDisb && { backgroundColor: Colors.light.success + "12" }, idx % 2 === 1 && !isDisb && { backgroundColor: Colors.light.inputBg }]}>
-                        <Text style={[styles.tableCell, { width: 90 }]}>{new Date(isReducingBalance ? r.date : r.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</Text>
-                        
-                        {isReducingBalance && (
-                          <Text style={[styles.tableCell, { width: 110, color: Colors.light.primary }]}>{isDisb ? "-" : r.receiptNo || "-"}</Text>
-                        )}
-                        
-                        <Text style={[styles.tableCell, { width: 120, fontFamily: "Poppins_500Medium" }]}>
-                          {isReducingBalance ? (isDisb ? t("ledger_loan_disbursed") || "Loan Disbursed" : t("ledger_repayment") || "Repayment") : "Repayment"}
-                        </Text>
-                        
-                        {isReducingBalance && (
-                          <>
-                            <Text style={[styles.tableCell, { width: 120 }]}>{r.openingPrincipal?.toLocaleString("en-IN") || "-"}</Text>
-                            <Text style={[styles.tableCell, { width: 110 }]}>{r.interestCharged?.toLocaleString("en-IN") || "-"}</Text>
-                            <Text style={[styles.tableCell, { width: 110 }]}>{r.interestPaid?.toLocaleString("en-IN") || "-"}</Text>
-                            <Text style={[styles.tableCell, { width: 110 }]}>{r.principalPaid?.toLocaleString("en-IN") || "-"}</Text>
-                          </>
-                        )}
-
-                        <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_600SemiBold" }]}>
-                          {isReducingBalance ? (r.paymentReceived?.toLocaleString("en-IN") || "-") : r.amount?.toLocaleString("en-IN")}
-                        </Text>
-                        
-                        <Text style={[styles.tableCell, { width: 120, color: (isReducingBalance ? r.closingPrincipal : r.runRem) > 0 ? Colors.light.danger : Colors.light.success, fontFamily: "Poppins_600SemiBold" }]}>
-                          {isReducingBalance ? r.closingPrincipal?.toLocaleString("en-IN") : r.runRem?.toLocaleString("en-IN")}
-                        </Text>
-
-                        {isReducingBalance && (
-                          <Text style={[styles.tableCell, { width: 130, color: r.outstandingInterest > 0 ? Colors.light.danger : Colors.light.success }]}>
-                            {r.outstandingInterest?.toLocaleString("en-IN") || "0"}
-                          </Text>
-                        )}
-                      </View>
-                    );
-                  })}
-
-                  {/* Settlement Summary Footer */}
-                  {loan.status === "completed" && (
-                    <View style={[styles.tableRow, { backgroundColor: Colors.light.primary + "20", borderTopWidth: 2, borderTopColor: Colors.light.primary }]}>
-                       <Text style={[styles.tableCell, { width: isReducingBalance ? 90 + 110 + 120 + 120 + 110 : 90 + 120, fontFamily: "Poppins_700Bold" }]}>{t("bank_loan.total") || "Total"}</Text>
-                       {isReducingBalance && (
-                         <>
-                           <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_700Bold" }]}>{(loan.totalInterestPaid || 0).toLocaleString("en-IN")}</Text>
-                           <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_700Bold" }]}>{(loan.totalPrincipalPaid || 0).toLocaleString("en-IN")}</Text>
-                         </>
-                       )}
-                       <Text style={[styles.tableCell, { width: 110, fontFamily: "Poppins_700Bold" }]}>
-                         {isReducingBalance ? ((loan.totalPrincipalPaid || 0) + (loan.totalInterestPaid || 0)).toLocaleString("en-IN") : totalRepaid.toLocaleString("en-IN")}
-                       </Text>
-                       <Text style={[styles.tableCell, { width: 120, fontFamily: "Poppins_700Bold" }]}>0</Text>
-                       {isReducingBalance && <Text style={[styles.tableCell, { width: 130, fontFamily: "Poppins_700Bold" }]}>0</Text>}
-                    </View>
-                  )}
-                </View>
-              </ScrollView>
-            )}
-
-            {/* Final Settlement Display if Completed */}
-            {loan.status === "completed" && (
-              <View style={{ marginTop: 24, backgroundColor: Colors.light.success + "15", padding: 16, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.success + "50" }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <Ionicons name="checkmark-done-circle" size={24} color={Colors.light.success} />
-                  <Text style={{ fontFamily: "Poppins_700Bold", fontSize: 16, color: Colors.light.success }}>{t("fully_repaid") || "Fully Repaid & Settled"}</Text>
-                </View>
-                <View style={{ gap: 8 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary }}>{t("loanAmount") || "Loan Amount"}</Text><Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.text }}>Rs. {loan.amount.toLocaleString("en-IN")}</Text></View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary }}>{t("total_principal_paid") || "Total Principal Paid"}</Text><Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.text }}>Rs. {(loan.totalPrincipalPaid || loan.amount).toLocaleString("en-IN")}</Text></View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary }}>{t("total_interest_paid") || "Total Interest Paid"}</Text><Text style={{ fontFamily: "Poppins_600SemiBold", color: Colors.light.text }}>Rs. {(loan.totalInterestPaid || 0).toLocaleString("en-IN")}</Text></View>
-                  <View style={{ borderTopWidth: 1, borderTopColor: Colors.light.border, marginVertical: 4 }} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><Text style={{ fontFamily: "Poppins_700Bold", color: Colors.light.text }}>{t("total_amount_repaid") || "Total Amount Repaid"}</Text><Text style={{ fontFamily: "Poppins_700Bold", color: Colors.light.primary }}>Rs. {isReducingBalance ? ((loan.totalPrincipalPaid || 0) + (loan.totalInterestPaid || 0)).toLocaleString("en-IN") : totalRepaid.toLocaleString("en-IN")}</Text></View>
-                </View>
-              </View>
-            )}
-          </View>
-        )}
 
         {canDelete && (
           <View style={{ marginTop: 24, paddingBottom: 24 }}>
@@ -782,9 +944,19 @@ export default function LoanDetailScreen() {
                   <Pressable style={[styles.deleteLoanBtn, { flex: 1, backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, marginTop: 0 }]} onPress={() => setConfirmDelete(false)}>
                     <Text style={[styles.deleteLoanBtnText, { color: Colors.light.text }]}>{t("auto.keep")}</Text>
                   </Pressable>
-                  <Pressable style={[styles.deleteLoanBtn, { flex: 1, backgroundColor: Colors.light.danger, marginTop: 0 }]} onPress={handleDeleteLoan}>
-                    <Ionicons name="warning-outline" size={20} color="#fff" />
-                    <Text style={[styles.deleteLoanBtnText, { color: '#fff' }]}>{t("auto.delete")}</Text>
+                  <Pressable 
+                    style={[styles.deleteLoanBtn, { flex: 1, backgroundColor: isDeleting ? Colors.light.border : Colors.light.danger, marginTop: 0 }]} 
+                    onPress={handleDeleteLoan}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="warning-outline" size={20} color="#fff" />
+                        <Text style={[styles.deleteLoanBtnText, { color: '#fff' }]}>{t("auto.delete")}</Text>
+                      </>
+                    )}
                   </Pressable>
                 </View>
               </View>
@@ -817,7 +989,7 @@ export default function LoanDetailScreen() {
             </View>
 
             {group?.qrCode ? (
-              <Image source={{ uri: group.qrCode }} style={{ width: 200, height: 200, marginBottom: 16 }} />
+              <Image source={{ uri: group.qrCode }} style={{ width: 200, height: 200, marginBottom: 16 }} resizeMode="contain" />
             ) : (
               <Text style={{ fontFamily: "Poppins_400Regular", color: Colors.light.textMuted, marginBottom: 16 }}>{t("noqrcode")}</Text>
             )}
@@ -1439,5 +1611,105 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.light.text,
     marginTop: 4
+  },
+  makePaymentBtn: {
+    backgroundColor: Colors.light.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  makePaymentBtnText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 13,
+    color: '#fff',
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    backgroundColor: Colors.light.card,
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  modeBtnText: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 14,
+    color: Colors.light.primary,
+  },
+  submitClaimBtn: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitClaimText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 15,
+    color: '#fff',
+  },
+  claimItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: Colors.light.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  claimAmount: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 15,
+    color: Colors.light.text,
+  },
+  claimMeta: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  claimRemarks: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 12,
+    color: Colors.light.textMuted,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  claimActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  claimApproveBtn: {
+    backgroundColor: Colors.light.success,
+    padding: 8,
+    borderRadius: 8,
+  },
+  claimRejectBtn: {
+    backgroundColor: Colors.light.danger + '15',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.light.danger + '30',
+  },
+  claimPendingBadge: {
+    backgroundColor: Colors.light.pending + '15',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  claimPendingText: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 12,
+    color: Colors.light.pending,
   },
 });

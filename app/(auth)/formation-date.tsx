@@ -12,19 +12,28 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLanguage } from "@/contexts/LanguageContext";
 import Colors from "@/constants/colors";
+import SHGDatePicker from "@/components/SHGDatePicker";
 
-export default function RegisterRoleScreen() {
+export default function FormationDateScreen() {
   const insets = useSafeAreaInsets();
   const { t, language, setLanguage } = useLanguage();
-  const [role, setRole] = useState<"president" | "member" | null>(null);
+  const [formationDate, setFormationDate] = useState("");
 
   const handleContinue = () => {
-    if (!role) return;
-    router.push({
-      pathname: "/(auth)/activation" as any,
-      params: { role },
-    });
+    if (!formationDate) return;
+    
+    const today = new Date();
+    const selected = new Date(formationDate);
+    const isCurrentMonth = selected.getMonth() === today.getMonth() && selected.getFullYear() === today.getFullYear();
+
+    if (isCurrentMonth) {
+      router.replace("/shg-settings" as any);
+    } else {
+      router.push("/(auth)/existing-shg-setup" as any);
+    }
   };
+
+  const todayStr = new Date().toISOString().split("T")[0];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -38,11 +47,6 @@ export default function RegisterRoleScreen() {
         ]}
       >
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
-            <Text style={styles.backText}>{t("back") || "Back"}</Text>
-          </Pressable>
-
           <Pressable
             style={styles.langToggle}
             onPress={() => setLanguage(language === "en" ? "mr" : "en")}
@@ -52,57 +56,37 @@ export default function RegisterRoleScreen() {
           </Pressable>
         </View>
 
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: "100%" }]} />
+          </View>
+          <Text style={styles.progressText}>4/4</Text>
+        </View>
+
         <View style={styles.main}>
-          <Text style={styles.title}>{t("register")}</Text>
+          <Text style={styles.title}>{t("when_was_your_group_formed") || "When was your group formed?"}</Text>
           <Text style={styles.subtitle}>
-            {t("choose_your_role_to_continue") || "Choose your role to continue."}
+            {t("select_exact_date_shg_started") || "Select the exact date your SHG started its operations."}
           </Text>
 
-          <View style={styles.rolesContainer}>
-            <Pressable
-              style={[
-                styles.roleCard,
-                role === "president" && styles.roleCardActive,
-              ]}
-              onPress={() => setRole("president")}
-            >
-              <Ionicons
-                name={role === "president" ? "radio-button-on" : "radio-button-off"}
-                size={24}
-                color={role === "president" ? Colors.light.primary : Colors.light.textSecondary}
-              />
-              <Text style={styles.roleText}>
-                {t("i_am_a_group_president") || "I am a Group President"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.roleCard,
-                role === "member" && styles.roleCardActive,
-              ]}
-              onPress={() => setRole("member")}
-            >
-              <Ionicons
-                name={role === "member" ? "radio-button-on" : "radio-button-off"}
-                size={24}
-                color={role === "member" ? Colors.light.primary : Colors.light.textSecondary}
-              />
-              <Text style={styles.roleText}>
-                {t("i_am_a_member") || "I am a Member"}
-              </Text>
-            </Pressable>
-          </View>
+          <Text style={styles.inputLabel}>{t("formation_date") || "Formation Date"}</Text>
+          <SHGDatePicker
+            mode="date"
+            value={formationDate}
+            onSelect={setFormationDate}
+            placeholder={t("select_date") || "DD/MM/YYYY"}
+            maximumDate={todayStr}
+          />
         </View>
 
         <Pressable
           style={({ pressed }) => [
             styles.continueBtn,
-            (!role || pressed) && { opacity: 0.85 },
-            !role && { backgroundColor: Colors.light.textMuted },
+            (!formationDate || pressed) && { opacity: 0.85 },
+            !formationDate && { backgroundColor: Colors.light.textMuted },
           ]}
           onPress={handleContinue}
-          disabled={!role}
+          disabled={!formationDate}
         >
           <Text style={styles.continueBtnText}>{t("continue") || "Continue"}</Text>
         </Pressable>
@@ -122,19 +106,10 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     paddingTop: 16,
-    marginBottom: 32,
-  },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  backText: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 16,
-    color: Colors.light.text,
+    marginBottom: 24,
   },
   langToggle: {
     flexDirection: "row",
@@ -152,6 +127,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.light.primary,
   },
+  progressContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 32,
+  },
+  progressBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: Colors.light.border,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.light.primary,
+  },
+  progressText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
   main: {
     flex: 1,
   },
@@ -167,27 +164,11 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginBottom: 32,
   },
-  rolesContainer: {
-    gap: 16,
-  },
-  roleCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 20,
-    borderRadius: 14,
-    backgroundColor: Colors.light.card,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  roleCardActive: {
-    borderColor: Colors.light.primary,
-    backgroundColor: Colors.light.primary + "10",
-  },
-  roleText: {
+  inputLabel: {
     fontFamily: "Poppins_500Medium",
-    fontSize: 16,
-    color: Colors.light.text,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 8,
   },
   continueBtn: {
     backgroundColor: Colors.light.primary,

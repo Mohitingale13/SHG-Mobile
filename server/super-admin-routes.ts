@@ -72,4 +72,20 @@ export function registerSuperAdminRoutes(app: Express) {
       return res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  app.delete("/api/super-admin/groups/:groupId", requireAuth as any, requireSuperAdmin as any, async (req: AuthRequest, res) => {
+    try {
+      const { groupId } = req.params;
+      const group = await storage.getGroupByGroupId(groupId as string);
+      if (!group) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+
+      await storage.deleteGroup(group.groupId);
+      return res.json({ success: true, message: "Group deleted successfully" });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
 }

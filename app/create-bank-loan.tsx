@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
-import { View, Text, StyleSheet, TextInput, ScrollView, Pressable, Platform, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TextInput, ScrollView, Pressable, Platform, Alert, ActivityIndicator, Switch } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -13,7 +13,7 @@ import Colors from "@/constants/colors";
 
 export default function CreateBankLoanScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isPresident } = useAuth();
+  const { user, isPresident, isTreasurer } = useAuth();
   const { t } = useLanguage();
   const { createGroupBankLoan } = useData();
 
@@ -29,8 +29,13 @@ export default function CreateBankLoanScreen() {
   const [remarks, setRemarks] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // President-only guard
-  if (!isPresident) {
+  // ── Migration window
+  const { isMigrationWindow } = useData();
+  const [isMigration, setIsMigration] = useState(false);
+  const [migrationCompleted, setMigrationCompleted] = useState(false);
+
+  // Admin-only guard
+  if (!isPresident && !isTreasurer) {
     return (
       <View style={[styles.container, { justifyContent: "center", alignItems: "center", padding: 20 }]}>
         <Ionicons name="lock-closed-outline" size={48} color={Colors.light.danger} />
@@ -51,6 +56,8 @@ export default function CreateBankLoanScreen() {
 
   const handleSubmit = async () => {
     if (!bankName.trim()) { Alert.alert(t("error"), t("bank_loan.error_bank_name_required")); return; }
+    if (!accountNumber.trim()) { Alert.alert(t("error"), t("bank_loan.error_account_required") || "Account Number is required"); return; }
+    if (!ifscCode.trim()) { Alert.alert(t("error"), t("bank_loan.error_ifsc_required") || "IFSC Code is required"); return; }
     if (!amount || Number(amount) <= 0) { Alert.alert(t("error"), t("bank_loan.error_amount_required")); return; }
     if (!annualInterestRate || Number(annualInterestRate) <= 0) { Alert.alert(t("error"), t("bank_loan.error_rate_required")); return; }
     if (!durationMonths || Number(durationMonths) <= 0) { Alert.alert(t("error"), t("bank_loan.error_duration_required")); return; }
@@ -70,6 +77,8 @@ export default function CreateBankLoanScreen() {
         annualInterestRate: Number(annualInterestRate),
         durationMonths: Number(durationMonths),
         remarks: remarks.trim() || undefined,
+        isExisting: isMigration || undefined,
+        isCompleted: (isMigration && migrationCompleted) || undefined,
       });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Navigate to the new loan detail for allocation
@@ -106,11 +115,11 @@ export default function CreateBankLoanScreen() {
 
         <View style={styles.row}>
           <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>{t("accountNumber")}</Text>
+            <Text style={styles.label}>{t("accountNumber")} *</Text>
             <TextInput style={styles.input} placeholder="e.g. 1234567890" keyboardType="number-pad" value={accountNumber} onChangeText={setAccountNumber} />
           </View>
           <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>{t("bank_loan.ifsc")}</Text>
+            <Text style={styles.label}>{t("bank_loan.ifsc")} *</Text>
             <TextInput style={styles.input} placeholder="e.g. SBIN0001234" autoCapitalize="characters" value={ifscCode} onChangeText={setIfscCode} />
           </View>
         </View>
@@ -157,6 +166,49 @@ export default function CreateBankLoanScreen() {
           <Text style={styles.label}>{t("bank_loan.remarks")}</Text>
           <TextInput style={[styles.input, { height: 80, textAlignVertical: "top" }]} multiline placeholder={t("bank_loan.remarks_optional")} value={remarks} onChangeText={setRemarks} />
         </View>
+
+        {/* Migration Entry Section */}
+        {isMigrationWindow && (
+          <View style={{ borderWidth: 1, borderColor: "#F59E0B80", borderRadius: 14, padding: 14, backgroundColor: "#FEF3C710" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="time-outline" size={18} color="#F59E0B" />
+                <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 14, color: Colors.light.text }}>
+                  {t("migration.entry_mode") || "Historical Entry (Migration)"}
+                </Text>
+              </View>
+              <Switch
+                value={isMigration}
+                onValueChange={(v) => { setIsMigration(v); setMigrationCompleted(false); }}
+                trackColor={{ false: Colors.light.border, true: "#F59E0B80" }}
+                thumbColor={isMigration ? "#F59E0B" : Colors.light.textMuted}
+              />
+            </View>
+            <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.light.textSecondary, marginBottom: isMigration ? 12 : 0 }}>
+              {t("migration.bank_entry_desc") || "Use this to log a bank loan that existed before the app was set up."}
+            </Text>
+            {isMigration && (
+              <View style={{ flexDirection: "row", backgroundColor: Colors.light.border + "60", borderRadius: 10, padding: 3 }}>
+                <Pressable
+                  style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: !migrationCompleted ? "#F59E0B" : "transparent", alignItems: "center" }}
+                  onPress={() => setMigrationCompleted(false)}
+                >
+                  <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: !migrationCompleted ? "#fff" : Colors.light.textSecondary }}>
+                    {t("migration.active_loan") || "Still Active"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: migrationCompleted ? Colors.light.success : "transparent", alignItems: "center" }}
+                  onPress={() => setMigrationCompleted(true)}
+                >
+                  <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 13, color: migrationCompleted ? "#fff" : Colors.light.textSecondary }}>
+                    {t("migration.completed_loan") || "Fully Repaid"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -178,7 +230,7 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontSize: 20, fontFamily: "Poppins_600SemiBold", color: Colors.light.text },
   content: { padding: 20, gap: 14 },
   sectionLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: Colors.light.primary, textTransform: "uppercase", letterSpacing: 0.5 },
-  inputGroup: { gap: 6 },
+  inputGroup: { gap: 6, justifyContent: "flex-end" },
   row: { flexDirection: "row", gap: 12 },
   label: { fontSize: 14, fontFamily: "Poppins_500Medium", color: Colors.light.text },
   input: { backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 12, padding: 14, fontFamily: "Poppins_400Regular", fontSize: 15, color: Colors.light.text },

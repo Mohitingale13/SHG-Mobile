@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Platform, Alert, Modal, ActivityIndicator } from "react-native";
+import { useState, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, Platform, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAuth, User } from "@/contexts/AuthContext";
 import { useData } from "@/contexts/DataContext";
@@ -41,7 +41,7 @@ function MemberItem({
   onToggleStatus: (id: string, status: "active" | "left") => void;
   onAssignTreasurer: (member: User) => void;
 }) {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const isActive = member.status === "active";
   const isCurrentTreasurer = member.id === treasurerId;
   const canManage = isPresident && member.role !== "president";
@@ -73,7 +73,14 @@ function MemberItem({
         </View>
         <Text style={styles.memberInfo}>{member.village}</Text>
         <Text style={styles.memberInfo}>{member.phone}</Text>
-        <Text style={styles.memberInfo}>{t("joinDate")}: {member.joinDate}</Text>
+        <Text style={styles.memberInfo}>{t("joinDate")}: {new Date(member.joinDate).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
+        {member.isRegistered !== undefined && (
+          <View style={[styles.registeredBadge, { backgroundColor: member.isRegistered ? Colors.light.success + "15" : Colors.light.warning + "15" }]}>
+            <Text style={[styles.statusBadgeText, { color: member.isRegistered ? Colors.light.success : Colors.light.warning }]}>
+              {member.isRegistered ? "Registered" : "Not Yet Registered"}
+            </Text>
+          </View>
+        )}
         {canManage && (
           <View style={styles.memberActions}>
             <Pressable onPress={() => onAssignTreasurer(member)} style={styles.assignBtn}>
@@ -122,12 +129,55 @@ function MemberItem({
 export default function MembersScreen() {
   const insets = useSafeAreaInsets();
   const { isPresident, group, refreshSession } = useAuth();
-  const { t, language } = useLanguage();
-  const { groupMembers, updateMemberStatus, assignTreasurer } = useData();
+  const { t } = useLanguage();
+  const { groupMembers, updateMemberStatus, assignTreasurer, refreshData } = useData();
   const [showModal, setShowModal] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [])
+  );
+
+  const [assignLoading, setAssignLoading] = useState(false);
   const [selectedMember, setSelectedMember] = useState<User | null>(null);
   
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberPhone, setNewMemberPhone] = useState("");
+  const [isAddingMember, setIsAddingMember] = useState(false);
+  const [isMemberAdded, setIsMemberAdded] = useState(false);
+  const [newMemberAddedMessage, setNewMemberAddedMessage] = useState<{name: string, phone: string} | null>(null);
+
+  const handleManualAddMember = async () => {
+    if (!newMemberName.trim() || newMemberPhone.trim().length !== 10) {
+      Alert.alert(t("error") || "Error", t("validation.fill_all_fields") || "Please enter valid name and 10-digit phone");
+      return;
+    }
+    setIsAddingMember(true);
+    try {
+      await apiPost(`/api/groups/${group?.groupId}/members`, {
+        name: newMemberName,
+        phone: newMemberPhone,
+      });
+      const addedName = newMemberName;
+      const addedPhone = newMemberPhone;
+      setIsMemberAdded(true);
+      setNewMemberAddedMessage({ name: addedName, phone: addedPhone });
+      await refreshSession();
+      setTimeout(() => {
+        setShowAddMemberModal(false);
+        setNewMemberName("");
+        setNewMemberPhone("");
+        setIsMemberAdded(false);
+      }, 1500);
+    } catch (e: any) {
+      Alert.alert(t("error") || "Error", e.message || "Failed to add member");
+    } finally {
+      setIsAddingMember(false);
+    }
+  };
 
   const handleToggleStatus = (memberId: string, newStatus: "active" | "left") => {
     const msg = newStatus === "left"
@@ -146,11 +196,13 @@ export default function MembersScreen() {
 
   const confirmAssign = async () => {
     if (!selectedMember) return;
+    setAssignLoading(true);
     const isAlreadyTreasurer = selectedMember.id === group?.treasurerId;
     try {
       await assignTreasurer(isAlreadyTreasurer ? null : selectedMember.id);
       await refreshSession();
     } catch {}
+    setAssignLoading(false);
     setShowModal(false);
   };
 
@@ -162,20 +214,29 @@ export default function MembersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? Math.max(insets.top, 20) : insets.top) + 12 }]}>
+      <View style={[styles.header, { paddingTop: (Platform.OS === "web" ? 0 : insets.top) + 12 }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Pressable onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color={Colors.light.text} />
           </Pressable>
           <Text style={styles.title}>{t("members")}</Text>
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <Text style={styles.countText}>{activeMembers.length} {t("active")}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.light.success + "15", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.light.success }} />
+            <Text style={{ fontSize: 13, color: Colors.light.success, fontFamily: "Poppins_600SemiBold" }}>{activeMembers.length}</Text>
+          </View>
           {isPresident && (
-            <Pressable style={styles.inviteBtn} onPress={() => setShowInviteModal(true)}>
-              <Ionicons name="person-add" size={16} color="#fff" />
-              <Text style={styles.inviteBtnText}>{t("members.invite")}</Text>
-            </Pressable>
+            <>
+              <Pressable style={[styles.inviteBtn, { paddingHorizontal: 10 }]} onPress={() => setShowAddMemberModal(true)}>
+                <Ionicons name="person-add" size={14} color="#fff" />
+                <Text style={styles.inviteBtnText}>{t("add") || "Add"}</Text>
+              </Pressable>
+              <Pressable style={[styles.inviteBtn, {backgroundColor: Colors.light.secondary, paddingHorizontal: 10}]} onPress={() => setShowInviteModal(true)}>
+                <Ionicons name="share-social" size={14} color="#fff" />
+                <Text style={styles.inviteBtnText}>{t("members.invite")}</Text>
+              </Pressable>
+            </>
           )}
         </View>
       </View>
@@ -185,6 +246,23 @@ export default function MembersScreen() {
           <Ionicons name="wallet" size={16} color="#D97706" />
           <Text style={styles.treasurerBannerText}>
             {t("currentTreasurer")}: <Text style={{ fontFamily: "Poppins_600SemiBold" }}>{currentTreasurer.name}</Text>
+          </Text>
+        </View>
+      )}
+
+      {newMemberAddedMessage && (
+        <View style={{ marginHorizontal: 20, marginBottom: 10, backgroundColor: "#ECFDF5", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#34D399", position: "relative" }}>
+          <Pressable style={{ position: "absolute", top: 8, right: 8, zIndex: 10 }} onPress={() => setNewMemberAddedMessage(null)}>
+            <Ionicons name="close" size={20} color="#065F46" />
+          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4, paddingRight: 20 }}>
+            <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+            <Text style={{ fontFamily: "Poppins_600SemiBold", fontSize: 14, color: "#065F46" }}>
+              {t("members.added_success_msg_prefix")} {newMemberAddedMessage.name}
+            </Text>
+          </View>
+          <Text style={{ fontFamily: "Poppins_400Regular", fontSize: 13, color: "#064E3B" }}>
+            {t("members.added_success_msg_suffix")} <Text style={{ fontFamily: "Poppins_700Bold" }}>password123</Text>
           </Text>
         </View>
       )}
@@ -238,21 +316,95 @@ export default function MembersScreen() {
                 <Text style={styles.modalCancelText}>{t("cancel")}</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalConfirmBtn, { backgroundColor: isRemoving ? Colors.light.danger : "#D97706" }]}
+                style={[
+                  styles.modalConfirmBtn,
+                  { backgroundColor: isRemoving ? Colors.light.danger : "#D97706" },
+                  assignLoading && { opacity: 0.7 }
+                ]}
                 onPress={confirmAssign}
+                disabled={assignLoading}
               >
-                <Ionicons name={isRemoving ? "close" : "checkmark"} size={18} color="#fff" />
-                <Text style={styles.modalConfirmText}>{t("confirm")}</Text>
+                {assignLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name={isRemoving ? "close" : "checkmark"} size={18} color="#fff" />
+                    <Text style={styles.modalConfirmText}>{t("confirm")}</Text>
+                  </>
+                )}
               </Pressable>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
-      <Modal visible={showInviteModal} transparent animationType="fade" onRequestClose={() => setShowInviteModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowInviteModal(false)}>
+      <Modal visible={showAddMemberModal} transparent animationType="fade" onRequestClose={() => setShowAddMemberModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowAddMemberModal(false)}>
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
             <View style={[styles.modalIconWrap, { backgroundColor: Colors.light.primary + "15" }]}>
               <Ionicons name="person-add" size={32} color={Colors.light.primary} />
+            </View>
+            <Text style={styles.modalTitle}>
+              {t("members.add_manual") || "Add Member Manually"}
+            </Text>
+            
+            <View style={{ width: "100%", marginTop: 16, gap: 12 }}>
+              <View>
+                <Text style={{ fontSize: 13, fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary, marginBottom: 4 }}>
+                  {t("full_name") || "Full Name"}
+                </Text>
+                <TextInput
+                  style={{ backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 8, padding: 12, fontFamily: "Poppins_400Regular" }}
+                  placeholder={t("enter_your_name") || "Enter name"}
+                  value={newMemberName}
+                  onChangeText={setNewMemberName}
+                />
+              </View>
+              <View>
+                <Text style={{ fontSize: 13, fontFamily: "Poppins_500Medium", color: Colors.light.textSecondary, marginBottom: 4 }}>
+                  {t("phone") || "Mobile Number"}
+                </Text>
+                <TextInput
+                  style={{ backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 8, padding: 12, fontFamily: "Poppins_400Regular" }}
+                  placeholder="10 digit number"
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  value={newMemberPhone}
+                  onChangeText={(text) => setNewMemberPhone(text.replace(/\D/g, "").slice(0, 10))}
+                />
+              </View>
+            </View>
+            
+            <View style={[styles.modalActions, { marginTop: 20 }]}>
+              <Pressable style={styles.modalCancelBtn} onPress={() => setShowAddMemberModal(false)}>
+                <Text style={styles.modalCancelText}>{t("cancel")}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalConfirmBtn, { backgroundColor: isMemberAdded ? Colors.light.success : Colors.light.primary, opacity: isAddingMember ? 0.7 : 1 }]}
+                onPress={handleManualAddMember}
+                disabled={isAddingMember || isMemberAdded}
+              >
+                {isAddingMember ? <ActivityIndicator size="small" color="#fff" /> : isMemberAdded ? (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={styles.modalConfirmText}>{t("added") || "Added"}</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.modalConfirmText}>{t("members.add") || "Add Member"}</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showInviteModal} transparent animationType="fade" onRequestClose={() => setShowInviteModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowInviteModal(false)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.modalIconWrap, { backgroundColor: Colors.light.secondary + "15" }]}>
+              <Ionicons name="share-social" size={32} color={Colors.light.secondary} />
             </View>
             <Text style={styles.modalTitle}>
               {t("members.invite_member")}
@@ -264,7 +416,7 @@ export default function MembersScreen() {
             <View style={styles.codeBox}>
               <Text style={styles.codeText} selectable>{group?.uniqueGroupCode}</Text>
             </View>
-            <Pressable style={[styles.modalConfirmBtn, { backgroundColor: Colors.light.primary, marginTop: 20, width: "100%" }]} onPress={() => setShowInviteModal(false)}>
+            <Pressable style={[styles.modalConfirmBtn, { backgroundColor: Colors.light.secondary, marginTop: 20, width: "100%" }]} onPress={() => setShowInviteModal(false)}>
               <Text style={styles.modalConfirmText}>{t("common.done")}</Text>
             </Pressable>
           </Pressable>
@@ -347,6 +499,17 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     justifyContent: "center",
     alignItems: "center",
+  },
+  registeredBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    alignSelf: "flex-start",
+    marginTop: 6,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
   },
   nameRow: {
     flexDirection: "row",

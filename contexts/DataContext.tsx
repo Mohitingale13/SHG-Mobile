@@ -212,7 +212,19 @@ export interface GroupSettings {
   contributionDueDay?: number;
   gracePeriodDays?: number;
   lateFeeAmount?: number;
-  lateFeeType?: "fixed" | "percentage";
+  lateFeeType?: "fixed" | "daily" | "none";
+  openingBalances?: {
+    openingDate: string;
+    totalSavings: number;
+    currentBalance: number;
+  };
+  migrationWindowExpiry?: string;
+  setupProgress?: {
+    openingBalances?: boolean;
+    members?: boolean;
+    internalLoans?: boolean;
+    bankLoans?: boolean;
+  };
 }
 
 export const DEFAULT_SETTINGS: GroupSettings = {
@@ -247,6 +259,22 @@ export function validateLoanRequest(amount: number, duration: number, settings: 
 
 import { User } from "./AuthContext";
 
+export interface LoanPaymentClaim {
+  id: string;
+  groupId: string;
+  loanId: string;
+  memberId: string;
+  memberName: string;
+  amount: number;
+  mode: "cash" | "online";
+  status: "pending" | "approved" | "rejected";
+  remarks?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+}
+
 export interface GroupSummary {
   totalSavings: number;
   currentBalance: number;
@@ -266,12 +294,15 @@ interface DataContextValue {
   loans: Loan[];
   loanRepayments: LoanRepayment[];
   loanLedgers: LoanLedger[];
+  loanClaims: LoanPaymentClaim[];
+
   affiliatedBanks: AffiliatedBank[];
   groupBankLoans: GroupBankLoan[];
   groupMembers: User[];
   groupRules: string;
   groupSettings: GroupSettings;
   groupSummary: GroupSummary | null;
+  isMigrationWindow: boolean;
   createMeeting: (data: { scheduledDate: string; agenda: string; notes: string }) => Promise<void>;
   updateMeeting: (id: string, data: Partial<Meeting>) => Promise<void>;
   cancelMeeting: (id: string) => Promise<void>;
@@ -293,6 +324,10 @@ interface DataContextValue {
     bankInterestRate?: number;
     bankDuration?: number;
     bankLoanRemarks?: string;
+    isExisting?: boolean;
+    isCompleted?: boolean;
+    outstandingPrincipal?: number;
+    loanDate?: string;
   }) => Promise<string | null>;
   treasurerApproveLoan: (id: string) => Promise<void>;
   treasurerRejectLoan: (id: string, reason?: string) => Promise<void>;
@@ -301,6 +336,10 @@ interface DataContextValue {
   deleteLoan: (id: string) => Promise<void>;
   addRepayment: (loanId: string, data: { shgAmount: number; bankAmount: number; date?: string; remarks?: string }) => Promise<void>;
   deleteRepayment: (repaymentId: string) => Promise<void>;
+  submitLoanClaim: (loanId: string, data: { amount: number; mode: string; remarks?: string }) => Promise<void>;
+  approveLoanClaim: (claimId: string) => Promise<void>;
+  rejectLoanClaim: (claimId: string, reason?: string) => Promise<void>;
+
   assignTreasurer: (userId: string | null) => Promise<void>;
   updateGroupRules: (rules: string) => Promise<void>;
   updateGroupSettings: (settings: GroupSettings) => Promise<void>;
@@ -310,7 +349,7 @@ interface DataContextValue {
   updateBank: (id: string, data: Partial<AffiliatedBank>) => Promise<void>;
   deactivateBank: (id: string) => Promise<void>;
   bankLoanAllocations: BankLoanAllocation[];
-  createGroupBankLoan: (data: Omit<GroupBankLoan, "id" | "createdAt" | "status" | "createdBy">) => Promise<GroupBankLoan>;
+  createGroupBankLoan: (data: Omit<GroupBankLoan, "id" | "createdAt" | "status" | "createdBy"> & { isExisting?: boolean; isCompleted?: boolean }) => Promise<GroupBankLoan>;
   updateGroupBankLoan: (id: string, data: Partial<GroupBankLoan>) => Promise<void>;
   deleteGroupBankLoan: (id: string) => Promise<void>;
   closeGroupBankLoan: (id: string) => Promise<void>;
@@ -329,6 +368,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanRepayments, setLoanRepayments] = useState<LoanRepayment[]>([]);
   const [loanLedgers, setLoanLedgers] = useState<LoanLedger[]>([]);
+  const [loanClaims, setLoanClaims] = useState<LoanPaymentClaim[]>([]);
+
   const [affiliatedBanks, setAffiliatedBanks] = useState<AffiliatedBank[]>([]);
   const [groupBankLoans, setGroupBankLoans] = useState<GroupBankLoan[]>([]);
   const [bankLoanAllocations, setBankLoanAllocations] = useState<BankLoanAllocation[]>([]);
@@ -336,6 +377,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [groupRules, setGroupRules] = useState("");
   const [groupSettings, setGroupSettings] = useState<GroupSettings>(DEFAULT_SETTINGS);
   const [groupSummary, setGroupSummary] = useState<GroupSummary | null>(null);
+
+  // Derived: is the 30-day migration window still open?
+  const isMigrationWindow = useMemo(() => {
+    const expiry = groupSettings?.migrationWindowExpiry;
+    if (!expiry) return false;
+    return new Date() <= new Date(expiry);
+  }, [groupSettings?.migrationWindowExpiry]);
 
   const loadData = useCallback(async () => {
     if (!user?.groupId) return;
@@ -352,8 +400,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       apiGet<AffiliatedBank[]>(`/api/groups/${gid}/banks`),        // 8
       apiGet<GroupBankLoan[]>(`/api/groups/${gid}/bank-loans`),    // 9
       apiGet<BankLoanAllocation[]>(`/api/groups/${gid}/bank-loan-allocations`), // 10
+      apiGet<LoanLedger[]>(`/api/groups/${gid}/loan-ledger`),      // 11
     ]);
-    const [m, p, l, r, members, rules, settings, summary, banks, gbl, bla] = results;
+    const [m, p, l, r, members, rules, settings, summary, banks, gbl, bla, ll] = results;
     if (m.status === "fulfilled") setMeetings(m.value);
     if (p.status === "fulfilled") setPayments(p.value);
     if (l.status === "fulfilled") setLoans(l.value);
@@ -365,11 +414,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (banks.status === "fulfilled") setAffiliatedBanks(banks.value);
     if (gbl.status === "fulfilled") setGroupBankLoans(gbl.value);
     if (bla.status === "fulfilled") setBankLoanAllocations(bla.value);
+    if (ll.status === "fulfilled") setLoanLedgers(ll.value);
+
+    // Load loan claims — only President/Treasurer can fetch the group-wide endpoint
+    if (user?.role === "president" || user?.role === "treasurer") {
+      apiGet<LoanPaymentClaim[]>(`/api/groups/${gid}/loan-claims`)
+        .then(setLoanClaims)
+        .catch(console.error);
+    }
+
     const failures = results.filter((res) => res.status === "rejected");
     if (failures.length > 0) {
       console.warn(`${failures.length} data endpoint(s) failed to load:`, failures.map((f) => (f as PromiseRejectedResult).reason?.message));
     }
   }, [user?.groupId]);
+
 
   useEffect(() => {
     if (user?.groupId) loadData();
@@ -382,9 +441,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [user?.groupId]);
 
   const updateMeeting = useCallback(async (id: string, data: Partial<Meeting>) => {
-    const updated = await apiPatch<Meeting>(`/api/meetings/${id}`, { ...data, deviceTime: getDeviceTimestamp() });
-    setMeetings((prev) => prev.map((m) => (m.id === id ? updated : m)));
-  }, []);
+    // Optimistic update for instant UI feedback
+    setMeetings((prev) => prev.map((m) => (m.id === id ? { ...m, ...data } as Meeting : m)));
+    
+    try {
+      const updated = await apiPatch<Meeting>(`/api/meetings/${id}`, { ...data, deviceTime: getDeviceTimestamp() });
+      setMeetings((prev) => prev.map((m) => (m.id === id ? updated : m)));
+    } catch (e) {
+      loadData(); // rollback on failure
+      throw e;
+    }
+  }, [loadData]);
 
   const cancelMeeting = useCallback(async (id: string) => {
     await updateMeeting(id, { status: "cancelled" });
@@ -517,6 +584,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [loanRepayments, user?.groupId]);
 
+  // ─── Loan Payment Claims ─────────────────────────────────────────────────
+  const submitLoanClaim = useCallback(async (loanId: string, data: { amount: number; mode: string; remarks?: string }) => {
+    if (!user?.groupId) return;
+    const claim = await apiPost<LoanPaymentClaim>(`/api/loans/${loanId}/claims`, data);
+    setLoanClaims((prev) => [...prev, claim]);
+  }, [user?.groupId]);
+
+  const approveLoanClaim = useCallback(async (claimId: string) => {
+    if (!user?.groupId) return;
+    const result = await apiPost<{ loan: Loan; repayment: LoanRepayment }>(`/api/loan-claims/${claimId}/approve`, {});
+    // Update claim status
+    setLoanClaims((prev) => prev.map((c) => c.id === claimId ? { ...c, status: 'approved' } : c));
+    // Refresh loan data
+    if (result.loan) setLoans((prev) => prev.map((l) => l.id === result.loan.id ? result.loan : l));
+    if (result.repayment) setLoanRepayments((prev) => [...prev, result.repayment]);
+  }, [user?.groupId]);
+
+  const rejectLoanClaim = useCallback(async (claimId: string, reason?: string) => {
+    if (!user?.groupId) return;
+    const updated = await apiPost<LoanPaymentClaim>(`/api/loan-claims/${claimId}/reject`, { reason });
+    setLoanClaims((prev) => prev.map((c) => c.id === claimId ? updated : c));
+  }, [user?.groupId]);
+
   const updateGroupRules = useCallback(async (rules: string) => {
     if (!user?.groupId) return;
     await apiPut(`/api/groups/${user.groupId}/rules`, { rules });
@@ -526,6 +616,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const updateGroupSettings = useCallback(async (settings: GroupSettings) => {
     if (!user?.groupId) return;
     await apiPut(`/api/groups/${user.groupId}/settings`, settings);
+    setGroupSettings(settings);
+  }, [user?.groupId]);
+
+  const updateSetupProgress = useCallback(async (progress: { internalLoans?: boolean; bankLoans?: boolean }) => {
+    if (!user?.groupId) return;
+    const { settings } = await apiPost<{ success: boolean; settings: GroupSettings }>(`/api/groups/${user.groupId}/setup-progress`, progress);
     setGroupSettings(settings);
   }, [user?.groupId]);
 
@@ -610,27 +706,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      meetings, payments, loans, loanRepayments, loanLedgers, affiliatedBanks, groupBankLoans, bankLoanAllocations, groupMembers, groupRules, groupSettings, groupSummary,
+      meetings, payments, loans, loanRepayments, loanLedgers, loanClaims, affiliatedBanks, groupBankLoans, bankLoanAllocations, groupMembers, groupRules, groupSettings, groupSummary, isMigrationWindow,
+
       createMeeting, updateMeeting, cancelMeeting, deleteMeeting,
       recordPayment, verifyPayment, reopenPayment, deletePayment, uploadQrCode,
       requestLoan, treasurerApproveLoan, treasurerRejectLoan, approveLoan, rejectLoan, deleteLoan,
       addRepayment, deleteRepayment,
+      submitLoanClaim, approveLoanClaim, rejectLoanClaim,
+
       assignTreasurer,
       createBank, updateBank, deactivateBank,
       createGroupBankLoan, updateGroupBankLoan, deleteGroupBankLoan, closeGroupBankLoan,
       allocateBankLoanFunds, recordBankLoanRepayment, getBankLoanAllocationLedger,
-      updateGroupRules, updateGroupSettings, updateGroupInfo, updateMember, refreshData: loadData,
+      updateGroupRules, updateGroupSettings, updateSetupProgress, updateGroupInfo, updateMember, refreshData: loadData,
     }),
-    [meetings, payments, loans, loanRepayments, loanLedgers, affiliatedBanks, groupBankLoans, bankLoanAllocations, groupMembers, groupRules, groupSettings, groupSummary,
+    [meetings, payments, loans, loanRepayments, loanLedgers, loanClaims, affiliatedBanks, groupBankLoans, bankLoanAllocations, groupMembers, groupRules, groupSettings, groupSummary, isMigrationWindow,
+
       createMeeting, updateMeeting, cancelMeeting, deleteMeeting,
       recordPayment, verifyPayment, reopenPayment, deletePayment, uploadQrCode,
       requestLoan, treasurerApproveLoan, treasurerRejectLoan, approveLoan, rejectLoan, deleteLoan,
       addRepayment, deleteRepayment,
+      submitLoanClaim, approveLoanClaim, rejectLoanClaim,
+
       assignTreasurer,
       createBank, updateBank, deactivateBank,
       createGroupBankLoan, updateGroupBankLoan, deleteGroupBankLoan, closeGroupBankLoan,
       allocateBankLoanFunds, recordBankLoanRepayment, getBankLoanAllocationLedger,
-      updateGroupRules, updateGroupSettings, updateGroupInfo, updateMember, loadData],
+      updateGroupRules, updateGroupSettings, updateSetupProgress, updateGroupInfo, updateMember, loadData],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
