@@ -2218,7 +2218,12 @@ export const translations: Record<string, any> = {
     "auto.are_you_sure_you_want": { "en": "Are you sure you want to log out?", "mr": "तुमची खात्री आहे की तुम्हाला लॉग आउट करायचे आहे?" },
     "auto.delete": { "en": "Delete", "mr": "हटवा" },
     "auto.delete_payment": { "en": "Delete Payment", "mr": "पेमेंट हटवा" },
-    "auto.this_payment_record_will_be": { "en": "This payment record will be permanently deleted.", "mr": "हा पेमेंट रेकॉर्ड कायमचा हटवला जाईल." }
+    "auto.this_payment_record_will_be": { "en": "This payment record will be permanently deleted.", "mr": "हा पेमेंट रेकॉर्ड कायमचा हटवला जाईल." },
+    "monthly_snapshot": { "en": "Monthly Savings Snapshot", "mr": "मासिक बचत स्थिती" },
+    "paid": { "en": "Paid", "mr": "भरले" },
+    "not_paid": { "en": "Not Paid", "mr": "नाही भरले" },
+    "collect": { "en": "Collect", "mr": "जमा करा" },
+    "all_paid": { "en": "All members have paid!", "mr": "सर्व सदस्यांनी पैसे भरले आहेत!" }
   }
 };
 

@@ -593,6 +593,14 @@ export default function DashboardScreen() {
           const monthlyAmount = groupSettings?.monthlyContributionAmount || 0;
           const lateFeeThisMonth = myUnpaid.reduce((s, p) => s + (p.lateFee || 0), 0) +
             (myConfirmedThisMonth?.lateFee || 0);
+            
+          let dueDateFormatted = "";
+          if (groupSettings?.contributionDueDay) {
+            const d = new Date();
+            d.setDate(groupSettings.contributionDueDay);
+            d.setMonth(d.getMonth() + 1);
+            dueDateFormatted = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+          }
 
           return (
             <View style={styles.section}>
@@ -616,7 +624,10 @@ export default function DashboardScreen() {
                 {/* Monthly Amount */}
                 {monthlyAmount > 0 && (
                   <View style={styles.memberThisMonthRow}>
-                    <Text style={styles.memberThisMonthLabel}>{myConfirmedThisMonth ? t("dashboard.savings_collected") : t("dashboard.savings_to_be_collected")}</Text>
+                    <Text style={styles.memberThisMonthLabel}>
+                      {myConfirmedThisMonth ? t("dashboard.savings_collected") : t("dashboard.savings_to_be_collected")}
+                      {!myConfirmedThisMonth && dueDateFormatted ? ` (Due ${dueDateFormatted})` : ""}
+                    </Text>
                     <Text style={styles.memberThisMonthValue}>Rs. {monthlyAmount.toLocaleString("en-IN")}</Text>
                   </View>
                 )}
