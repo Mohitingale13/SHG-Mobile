@@ -1,5 +1,7 @@
 # SHG Digital Record Platform
 
+Deployed Link: www.shg-dev.in
+
 A mobile-first, bilingual (Marathi & English) record-keeping and governance transparency platform for Self Help Groups (SHGs). Built specifically for rural women in Maharashtra, India. It operates as a native Android app with an integrated Super Admin dashboard for centralized management.
 
 ---
